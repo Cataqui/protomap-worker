@@ -12,7 +12,7 @@
   "r2_buckets": [
     {
       "binding": "BUCKET",
-      "bucket_name": "cataqui-map-development"
+      "bucket_name": "protomap-development"
     }
   ],
   "env": {
@@ -21,7 +21,7 @@
       "r2_buckets": [
         {
           "binding": "BUCKET",
-          "bucket_name": "cataqui-map-production"
+          "bucket_name": "protomap-production"
         }
       ]
     },
@@ -30,7 +30,7 @@
       "r2_buckets": [
         {
           "binding": "BUCKET",
-          "bucket_name": "cataqui-map-staging"
+          "bucket_name": "protomap-staging"
         }
       ]
     }

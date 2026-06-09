@@ -20,20 +20,20 @@ pnpm install
 Create the development bucket:
 
 ```bash
-wrangler r2 bucket create cataqui-map-development
+wrangler r2 bucket create protomap-development
 ```
 
 For staging and production, create additional buckets and configure them in `wrangler.jsonc`:
 
 ```bash
-wrangler r2 bucket create cataqui-map-staging
-wrangler r2 bucket create cataqui-map-production
+wrangler r2 bucket create protomap-staging
+wrangler r2 bucket create protomap-production
 ```
 
 Upload your `.pmtiles` files to the bucket:
 
 ```bash
-wrangler r2 object put cataqui-map-[ENV]/map.pmtiles --file ./path/to/map.pmtiles
+wrangler r2 object put protomap-[ENV]/map.pmtiles --file ./path/to/map.pmtiles
 ```
 
 ## Local Development
@@ -57,9 +57,9 @@ The worker serves at http://localhost:8787. The cache is not active in local dev
 
 | Environment   | Bucket Name                  |
 |---------------|------------------------------|
-| Development   | `cataqui-map-development`    |
-| Staging       | `cataqui-map-staging`        |
-| Production    | `cataqui-map-production`     |
+| Development   | `protomap-development`    |
+| Staging       | `protomap-staging`        |
+| Production    | `protomap-production`     |
 
 ### Cloudflare Bindings
 
