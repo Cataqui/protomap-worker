@@ -1,24 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { KeyNotFoundError } from "./r2-source";
+import { ArchiveNotFoundError, WorkerErrorCodes } from "../error";
 
-describe("KeyNotFoundError", () => {
+describe("ArchiveNotFoundError", () => {
   it("is an instance of Error", () => {
-    const error = new KeyNotFoundError("Archive not found");
+    const error = new ArchiveNotFoundError("test-archive");
     expect(error).toBeInstanceOf(Error);
   });
 
-  it("is an instance of KeyNotFoundError", () => {
-    const error = new KeyNotFoundError("Archive not found");
-    expect(error).toBeInstanceOf(KeyNotFoundError);
+  it("has code ARCHIVE_NOT_FOUND", () => {
+    const error = new ArchiveNotFoundError("test-archive");
+    expect(error.code).toBe(WorkerErrorCodes.ARCHIVE_NOT_FOUND);
   });
 
-  it("preserves the error message", () => {
-    const error = new KeyNotFoundError("Custom message");
-    expect(error.message).toBe("Custom message");
+  it("has status 404", () => {
+    const error = new ArchiveNotFoundError("test-archive");
+    expect(error.status).toBe(404);
   });
 
-  it("has the correct name", () => {
-    const error = new KeyNotFoundError("test");
-    expect(error.name).toBe("KeyNotFoundError");
+  it("includes the archive name in details", () => {
+    const error = new ArchiveNotFoundError("custom-archive");
+    expect(error.details).toEqual({ archiveName: "custom-archive" });
+  });
+
+  it("includes the archive name in the message", () => {
+    const error = new ArchiveNotFoundError("my-map");
+    expect(error.message).toContain("my-map");
   });
 });

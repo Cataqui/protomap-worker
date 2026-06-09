@@ -1,5 +1,6 @@
 import type { Header, PMTiles, TileType } from "pmtiles";
 import { describe, expect, it } from "vitest";
+import { WorkerErrorCodes } from "../error";
 import { servePmtilesRequest } from "./tile-serving";
 
 function createMockPmtiles(overrides: {
@@ -62,32 +63,31 @@ describe("servePmtilesRequest", () => {
   });
 
   describe("zoom validation", () => {
-    it("returns 404 when zoom is below minZoom", async () => {
+    it("throws TILE_ZOOM_OUT_OF_RANGE when zoom is below minZoom", async () => {
       const pmtiles = createMockPmtiles({ minZoom: 5, maxZoom: 10 });
-      const result = await servePmtilesRequest(pmtiles, "test", [0, 0, 0] as [number, number, number], "mvt", "example.com");
-
-      expect(result.status).toBe(404);
-      expect(result.body).toBeUndefined();
-      expect(result.contentType).toBeUndefined();
+      await expect(servePmtilesRequest(pmtiles, "test", [0, 0, 0] as [number, number, number], "mvt", "example.com")).rejects.toMatchObject({
+        code: WorkerErrorCodes.TILE_ZOOM_OUT_OF_RANGE,
+        status: 400,
+        details: { requested: 0, min: 5, max: 10 },
+      });
     });
 
-    it("returns 404 when zoom is above maxZoom", async () => {
+    it("throws TILE_ZOOM_OUT_OF_RANGE when zoom is above maxZoom", async () => {
       const pmtiles = createMockPmtiles({ minZoom: 0, maxZoom: 5 });
-      const result = await servePmtilesRequest(pmtiles, "test", [10, 0, 0] as [number, number, number], "mvt", "example.com");
-
-      expect(result.status).toBe(404);
-      expect(result.body).toBeUndefined();
-      expect(result.contentType).toBeUndefined();
+      await expect(servePmtilesRequest(pmtiles, "test", [10, 0, 0] as [number, number, number], "mvt", "example.com")).rejects.toMatchObject({
+        code: WorkerErrorCodes.TILE_ZOOM_OUT_OF_RANGE,
+        status: 400,
+      });
     });
   });
 
   describe("tile type validation", () => {
-    it("returns 400 when tile extension does not match archive type", async () => {
+    it("throws TILE_TYPE_MISMATCH when tile extension does not match archive type", async () => {
       const pmtiles = createMockPmtiles({ tileType: 2 as TileType, minZoom: 0, maxZoom: 10 });
-      const result = await servePmtilesRequest(pmtiles, "test", [0, 0, 0] as [number, number, number], "mvt", "example.com");
-
-      expect(result.status).toBe(400);
-      expect(result.body).toContain("Bad request");
+      await expect(servePmtilesRequest(pmtiles, "test", [0, 0, 0] as [number, number, number], "mvt", "example.com")).rejects.toMatchObject({
+        code: WorkerErrorCodes.TILE_TYPE_MISMATCH,
+        status: 400,
+      });
     });
 
     it("passes validation when tile extension matches archive type", async () => {

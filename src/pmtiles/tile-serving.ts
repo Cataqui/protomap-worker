@@ -1,4 +1,5 @@
 import type { PMTiles } from "pmtiles";
+import { TileTypeMismatchError, TileZoomOutOfRangeError } from "../error";
 import { EXT_TO_TILE_TYPE, TILE_TYPE_TO_CONTENT_TYPE, tileTypeExt } from "./pmtiles.constants";
 
 export async function servePmtilesRequest(
@@ -19,14 +20,13 @@ export async function servePmtilesRequest(
     return { body: JSON.stringify(t), status: 200, contentType: "application/json" };
   }
 
-  if (tile[0] < pHeader.minZoom || tile[0] > pHeader.maxZoom) return { status: 404 };
+  if (tile[0] < pHeader.minZoom || tile[0] > pHeader.maxZoom) {
+    throw new TileZoomOutOfRangeError(tile[0], pHeader.minZoom, pHeader.maxZoom);
+  }
 
   const expectedType = EXT_TO_TILE_TYPE[ext];
   if (pHeader.tileType !== expectedType && tileTypeExt(pHeader.tileType) !== "") {
-    return {
-      body: `Bad request: requested .${ext} but archive has type ${tileTypeExt(pHeader.tileType)}`,
-      status: 400,
-    };
+    throw new TileTypeMismatchError(ext, tileTypeExt(pHeader.tileType));
   }
 
   const tiledata = await pmtiles.getZxy(tile[0], tile[1], tile[2]);

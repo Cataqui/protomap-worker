@@ -1,313 +1,341 @@
-# Protomap Worker
+<div align="center">
+  <br/>
+  <h1>🗺️ Protomap Worker</h1>
+  <p><strong>Self-hosted Protomaps tile server on Cloudflare Workers, as easy as Mapbox, but yours.</strong></p>
+  <p>
+    <a href="#-quick-start"><img src="https://img.shields.io/badge/Quick_Start-30_seconds-73DC8C?style=flat" alt="Quick Start"></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat" alt="License"></a>
+    <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"></a>
+    <a href="https://biomejs.dev/"><img src="https://img.shields.io/badge/code_style-Biome-60A5FA?style=flat" alt="Biome"></a>
+    <a href="https://protomaps.com/"><img src="https://img.shields.io/badge/powered_by-Protomaps-FF6B35?style=flat" alt="Protomaps"></a>
+    <a href="https://workers.cloudflare.com/"><img src="https://img.shields.io/badge/runtime-Cloudflare_Workers-F38020?style=flat&logo=cloudflare&logoColor=white" alt="Cloudflare Workers"></a>
+  </p>
+  <br/>
+</div>
 
-A Cloudflare Worker for serving [PMTiles](https://protomaps.com/) map tiles from R2 storage.
+Deploy a production-ready **Protomaps** tile worker in under 5 minutes. No servers to manage, no CDN config, no complex infrastructure. Upload your `.pmtiles` file, deploy the worker, and get a map on screen, it's that simple.
 
-## Prerequisites
+```bash
+# 1. Deploy the worker
+npx wrangler deploy
 
-- [Node.js](https://nodejs.org/) >= 18
-- [pnpm](https://pnpm.io/)
-- [Cloudflare account](https://dash.cloudflare.com/)
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) (included as dev dependency)
+# 2. Upload your map data
+npx wrangler r2 object put protomap-development/my-map.pmtiles --file ./map.pmtiles
 
-## Setup
+# 3. Open in your app
+https://protomap-worker.example.com/my-map/{z}/{x}/{y}.mvt
+```
+
+---
+
+## ✨ Features
+
+- **⚡ Edge-native:** Built for Cloudflare Workers, deployed globally in seconds
+- **🗂️ PMTiles:** Serves vector and raster tiles directly from `.pmtiles` archives
+- **🔐 Optional auth:** HMAC-SHA256 signed URL protection when you need it
+- **🚀 Production-ready:** Caching, CORS, input validation, and structured errors
+- **📦 Zero infra:** No servers, no Kubernetes, no CDN configuration
+- **🎯 Framework-agnostic:** Works with Leaflet, MapLibre, OpenLayers, MapKit, Flutter, React Native, and more
+- **📋 TileJSON:** Built-in metadata endpoint for compliant map clients
+- **🔒 Security by default:** No stack traces, path traversal protection, strict input validation
+
+---
+
+## 📖 Table of Contents
+
+- [Quick Start](#-quick-start)
+- [What & Why](#-what--why)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [API Reference](#-api-reference)
+- [Authentication (Signed URLs)](#-authentication-signed-urls)
+- [Client Integration](#-client-integration)
+- [Deployment](#-deployment)
+- [Local Development](#-local-development)
+- [Scripts](#-scripts)
+- [Architecture](#-architecture)
+- [Security](#-security)
+- [Limitations](#-limitations)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+---
+
+## ⚡ Quick Start
+
+Get a tile server running in 3 steps:
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) ≥ 18
+- [pnpm](https://pnpm.io/installation)
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier works)
+
+### 1. Clone & install
+
+```bash
+git clone https://github.com/Cataqui/protomap-worker.git
+cd protomap-worker
+pnpm install
+```
+
+### 2. Create an R2 bucket
+
+```bash
+npx wrangler r2 bucket create protomap-development
+```
+
+### 3. Deploy & upload a map
+
+```bash
+# Deploy the worker
+pnpm deploy
+
+# Upload a .pmtiles file
+npx wrangler r2 object put protomap-development/my-map.pmtiles --file ./path/to/your-map.pmtiles
+```
+
+**Your map is live.** Point your map library at:
+
+```
+https://protomap-worker.example.com/my-map/{z}/{x}/{y}.mvt
+```
+
+> 💡 **Don't have a `.pmtiles` file?** Download a sample from [Protomaps Downloads](https://protomaps.com/downloads) or build one with [Planetiler](https://github.com/onthegomap/planetiler).
+
+---
+
+## 🧭 What & Why
+
+### What is Protomap Worker?
+
+A **Cloudflare Worker** that serves map tiles from [PMTiles](https://protomaps.com/) archives stored in **Cloudflare R2**. It wraps the [`pmtiles`](https://github.com/protomaps/PMTiles) library in a secure, cacheable, production-grade HTTP interface.
+
+### Why not just use Mapbox?
+
+| | Protomap Worker | Mapbox |
+|---|---|---|
+| **Cost** | Pay only for R2 storage + Worker requests | Usage-based pricing, can get expensive |
+| **Data control** | Your data, your bucket | Data lives on Mapbox servers |
+| **Privacy** | No third-party tile server | Analytics & tracking built in |
+| **Self-sovereignty** | Full control over deployment | Vendor lock-in |
+| **Global edge** | Cloudflare's global network | Their own CDN |
+| **Setup time** | ~5 minutes | Registration + API keys + billing |
+
+Protomap Worker gives you **Mapbox-like ease** with **self-hosted control**.
+
+---
+
+## 📦 Installation
 
 ```bash
 pnpm install
 ```
 
-## Cloudflare R2 Buckets
+This installs the worker, CLI tooling (Wrangler), and all dependencies.
 
-Create the development bucket:
+---
 
-```bash
-wrangler r2 bucket create protomap-development
-```
+## ⚙️ Configuration
 
-For staging and production, create additional buckets and configure them in `wrangler.jsonc`:
+### Environment Variables
 
-```bash
-wrangler r2 bucket create protomap-staging
-wrangler r2 bucket create protomap-production
-```
+Set in `wrangler.jsonc` (non-secret) or as Cloudflare secrets:
 
-Upload your `.pmtiles` files to the bucket:
+| Variable | Default | Secret? | Description |
+|---|---|---|---|
+| `AUTH_SECRET` | — | ✅ | HMAC-SHA256 secret for signed URL authentication. When unset, auth is disabled. |
+| `ALLOWED_ORIGINS` | `*` | ❌ | Comma-separated list of allowed CORS origins. Set to specific domains in production. |
+| `CACHE_CONTROL` | `public, max-age=86400` | ❌ | `Cache-Control` header value for tile responses. |
+| `PMTILES_PATH` | `{name}.pmtiles` | ❌ | Template for R2 key resolution. Supports `{name}` placeholder. Example: `folder/{name}/archive.pmtiles` |
+| `PUBLIC_HOSTNAME` | — | ❌ | Public hostname used in TileJSON responses. Auto-detected from request when unset. |
 
-```bash
-wrangler r2 object put protomap-[ENV]/map.pmtiles --file ./path/to/map.pmtiles
-```
+### Local Development
 
-## Local Development
-
-The worker serves at http://localhost:8787. Cache is not active in local development.
-
-### Option A: Local mode (no Cloudflare login needed)
+Copy the example env file:
 
 ```bash
-pnpm start
+cp .dev.vars.example .dev.vars
 ```
 
-The R2 bucket is simulated in-memory and starts empty — no actual Cloudflare resources are touched.
-Use this for code changes and unit testing; tile requests will return 404 since there's no data.
+Edit `.dev.vars` to set `AUTH_SECRET` if you need auth locally:
 
-### Option B: Remote mode (requires login once)
-
-```bash
-wrangler login          # One-time setup
-pnpm start -- --remote  # Or: wrangler dev --remote
+```env
+AUTH_SECRET=your-local-secret
 ```
 
-Connects to your real `protomap-development` R2 bucket on Cloudflare's edge.
-Upload your `.pmtiles` file first:
+> `ALLOWED_ORIGINS` and `CACHE_CONTROL` are already set in `wrangler.jsonc` — no need to duplicate them.
 
-```bash
-wrangler r2 object put protomap-development/my-map.pmtiles --file ./my-map.pmtiles
+### R2 Buckets
+
+Configured in `wrangler.jsonc` under each environment:
+
+| Environment | Bucket Name | Worker Name |
+|---|---|---|
+| Development | `protomap-development` | `protomap-worker` |
+| Staging | `protomap-staging` | `protomap-worker-staging` |
+| Production | `protomap-production` | `protomap-worker-production` |
+
+The worker expects a single R2 bucket binding named `BUCKET`.
+
+---
+
+## 📡 API Reference
+
+### Serve a tile
+
+```
+GET /{name}/{z}/{x}/{y}.{ext}
 ```
 
-Then requests to http://localhost:8787/my-map/... will serve real tile data.
+| Param | Description |
+|---|---|
+| `name` | Map identifier. Resolves to an R2 object key using `PMTILES_PATH` template (default: `{name}.pmtiles`). |
+| `z` | Zoom level. `0` (single world tile) through `20+`. |
+| `x` | Tile column. Range: `0` to `2^z - 1`, left to right. |
+| `y` | Tile row. Range: `0` to `2^z - 1`, top to bottom (TMS). |
+| `ext` | File extension. Must match the archive's tile type (see table below). |
 
-## Configuration
+**Extension to tile type mapping:**
 
-### Environment Variables (`wrangler.jsonc`)
+| Extension | Content Type |
+|---|---|
+| `mvt`, `pbf` | `application/x-protobuf` (vector tiles) |
+| `png` | `image/png` |
+| `jpg`, `jpeg` | `image/jpeg` |
+| `webp` | `image/webp` |
+| `avif` | `image/avif` |
 
-| Variable         | Default                    | Description                          |
-|------------------|----------------------------|--------------------------------------|
-| `ALLOWED_ORIGINS`| `*`                        | Comma-separated CORS origins         |
-| `AUTH_SECRET`    | —                          | HMAC-SHA256 secret for signed URLs   |
-| `CACHE_CONTROL`  | `public, max-age=86400`    | Cache-Control header for responses   |
+> ⚠️ Using a mismatched extension (e.g., `.png` on an MVT archive) returns `400 Bad Request`.
+>
+> 💡 **How to check your archive's type:** Run `pmtiles show file.pmtiles` and check the tile type in the header, or request `/{name}.json` to see the TileJSON response.
 
-When `AUTH_SECRET` is not set, authentication is disabled and all requests are allowed.
+**Example:**
 
-### R2 Buckets (`wrangler.jsonc`)
+```http
+GET /brazil/12/1516/2021.mvt
+```
 
-| Environment   | Bucket Name                  |
-|---------------|------------------------------|
-| Development   | `protomap-development`    |
-| Staging       | `protomap-staging`        |
-| Production    | `protomap-production`     |
+```http
+HTTP/1.1 200 OK
+Content-Type: application/x-protobuf
+Cache-Control: public, max-age=86400
+Access-Control-Allow-Origin: *
+```
 
-### Cloudflare Bindings
+### Get TileJSON metadata
 
-The worker expects a single R2 bucket binding named `BUCKET`. The bucket name varies by environment (see above).
+```
+GET /{name}.json
+```
 
-## Authentication (Signed URLs)
+Returns a [TileJSON](https://github.com/mapbox/tilejson-spec) description of the tileset — useful for MapLibre, Mapbox GL, and other TileJSON-aware clients.
 
-The worker supports optional HMAC-SHA256 signature-based authentication for tile and TileJSON requests. When `AUTH_SECRET` is set, all requests must include valid `v`, `sig`, and `exp` query parameters. When `AUTH_SECRET` is not set, authentication is disabled and all requests pass through.
+**Example:**
+
+```http
+GET /brazil.json
+```
+
+```json
+{
+  "tilejson": "3.0.0",
+  "name": "brazil",
+  "scheme": "xyz",
+  "tiles": [
+    "https://your-worker.example.com/brazil/{z}/{x}/{y}.mvt"
+  ],
+  "vector_layers": [...],
+  "maxzoom": 14,
+  "minzoom": 0
+}
+```
+
+### Cache behavior
+
+- **Local dev:** Caching is disabled
+- **Production:** Uses `caches.default` with `Cache-Control` from configuration
+- **Cache key:** Based on URL with auth params stripped (so signed URLs still cache effectively)
+
+---
+
+## 🔐 Authentication (Signed URLs)
+
+Optional HMAC-SHA256 signed URL protection. When `AUTH_SECRET` is set, every request must include valid `v`, `sig`, and `exp` query parameters. When unset, all requests pass through unauthenticated.
 
 ### How it works
 
-1. A backend service signs URLs using HMAC-SHA256 with the shared `AUTH_SECRET`.
-2. The signature covers a versioned message format that includes the params needed for validation.
-3. The frontend (map library) includes the signed URL params in tile requests.
-4. The worker verifies the signature and params before serving each request.
+1. A **backend service** signs tile URLs using your `AUTH_SECRET`
+2. The **frontend** receives a fully signed URL template
+3. The **worker** verifies each request before serving tile data
 
-### URL Format
+No secrets ever reach the client.
+
+### URL format
 
 ```
 GET /{name}/{z}/{x}/{y}.{ext}?v=1&sig={hex_signature}&exp={unix_timestamp}
 ```
 
 | Param | Description |
-|-------|-------------|
-| `v`   | Signature version (currently `1`) |
-| `sig` | Hex-encoded HMAC-SHA256 signature |
-| `exp` | Unix timestamp when the URL expires |
+|---|---|
+| `v` | Signature version. Currently `1`. |
+| `sig` | Hex-encoded HMAC-SHA256 signature of the message. |
+| `exp` | Unix timestamp (seconds) when this URL expires. |
 
-### Signing Algorithm
-
-The signed message is versioned and colon-delimited for future extensibility:
-
-```
-v1 (current): message = "v1:" + expiration
-v2 (future):  message = "v2:" + mapName + ":" + expiration
-```
-
-The `v` URL parameter tells the verifier which version to use, so only one HMAC computation is needed per request.
-
-#### Backend signing example (Node.js)
+### Signing (Node.js backend example)
 
 ```javascript
-const crypto = require("crypto");
+import { createHmac } from "node:crypto";
+
 const secret = process.env.AUTH_SECRET;
-const exp = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+const exp = Math.floor(Date.now() / 1000) + 3600; // 1 hour
 const message = `v1:${exp}`;
-const sig = crypto.createHmac("sha256", secret).update(message).digest("hex");
-const url = `https://your-worker.example.com/your-map/{z}/{x}/{y}.mvt?v=1&sig=${sig}&exp=${exp}`;
+const sig = createHmac("sha256", secret).update(message).digest("hex");
+
+const url = `https://your-worker.example.com/my-map/{z}/{x}/{y}.mvt?v=1&sig=${sig}&exp=${exp}`;
 ```
 
-### Setting the Secret
+> The message format is versioned for future extensibility:
+> - **v1:** `v1:{exp}`
+> - **v2 (future):** `v2:{mapName}:{exp}`
 
-Generate a secret:
+### Setting the secret
 
 ```bash
+# Generate a secret
 openssl rand -hex 32
+
+# Set in production
+npx wrangler secret put AUTH_SECRET
+npx wrangler secret put AUTH_SECRET --env staging
+npx wrangler secret put AUTH_SECRET --env production
 ```
 
-Set it in production:
+For local development, add to `.dev.vars`:
+
+```env
+AUTH_SECRET=your-generated-secret
+```
+
+### Verify with curl
 
 ```bash
-wrangler secret put AUTH_SECRET
-wrangler secret put AUTH_SECRET --env staging
-wrangler secret put AUTH_SECRET --env production
-```
-
-For local development, copy `.dev.vars.example` to `.dev.vars` and set `AUTH_SECRET` there.
-
-### Client Integration
-
-The frontend never has the secret. A backend service signs the URL and passes it to the frontend. The map library uses the full signed URL as the tile URL template.
-
-**JavaScript example (fetch from backend, then use in Leaflet):**
-
-```javascript
-// Fetch a signed URL from your backend
-const response = await fetch("/api/sign-tile-url");
-const { signedUrl } = await response.json();
-
-// Use in Leaflet
-const map = L.map('map').setView([-23.55, -46.63], 12);
-L.tileLayer(signedUrl, {
-  tileSize: 512,
-}).addTo(map);
-```
-
-### Testing with curl
-
-```bash
-# Compute a signature (adjust expiration as needed)
 SECRET="your-auth-secret"
 EXP=$(($(date +%s) + 3600))
 SIG=$(echo -n "v1:$EXP" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')
 
-# Fetch tile with signed URL
-curl "https://your-worker.example.com/your-map/12/1516/2021.mvt?v=1&sig=$SIG&exp=$EXP" -o tile.mvt
+curl "https://your-worker.example.com/my-map/12/1516/2021.mvt?v=1&sig=$SIG&exp=$EXP" -o tile.mvt
 ```
 
-## API
+---
 
-### Tile Endpoint
+## 🎨 Client Integration
 
-```
-GET /{name}/{z}/{x}/{y}.{ext}
-```
+Protomap Worker works with any map library that supports HTTP tile sources. All examples use the tile URL pattern `https://your-worker.example.com/{mapName}/{z}/{x}/{y}.mvt`.
 
-- `name` — Map identifier. The worker looks up a `.pmtiles` file with this name in the R2 bucket. For example, requesting `/brazil/12/1516/2021.mvt` will fetch `brazil.pmtiles` from the bucket.
-
-  You can customize how the name maps to the R2 key via the `PMTILES_PATH` environment variable. By default it's `{name}.pmtiles`, but you can set it to `folder/{name}/archive.pmtiles` or any template containing `{name}`.
-- `z` — Zoom level (`0` = single tile covering the whole world, `1` = 2×2 tiles, etc.)
-- `x` — Tile column (0 to `2^z - 1`, left to right)
-- `y` — Tile row (0 to `2^z - 1`, top to bottom)
-- `ext` — File extension that matches the `.pmtiles` archive's internal tile type
-
-  A `.pmtiles` file stores tiles in exactly one format. The URL extension must match it:
-
-  | If your `.pmtiles` contains... | Use `ext` |
-  |---|---|
-  | Vector tiles (most common, e.g. from Planetiler) | `mvt` (or `pbf` as alias) |
-  | PNG raster tiles | `png` |
-  | JPEG raster tiles | `jpg` |
-  | WebP raster tiles | `webp` |
-  | AVIF raster tiles | `avif` |
-
-  Mismatch example: using `.png` when the archive stores MVT returns a `400` error.
-
-  **How to find your archive's type**: run `pmtiles show file.pmtiles` and check the tile type in the header, or request `/name.json` to get the TileJSON response.
-
-### TileJSON Endpoint
-
-```
-GET /{name}.json
-```
-
-Returns a [TileJSON](https://github.com/mapbox/tilejson-spec) description of the tileset.
-
-### Authentication
-
-If `AUTH_SECRET` is set, all requests must include `?v=1&sig=...&exp=...` query parameters. See the [Authentication section](#authentication-signed-urls) for details.
-
-### Example
-
-Request (without auth):
-
-```http
-GET /my-map/10/5/12.mvt
-```
-
-Request (with auth enabled):
-
-```http
-GET /my-map/10/5/12.mvt?v=1&sig=abc123def456...&exp=1718000000
-```
-
-Response: binary protobuf tile data with `Content-Type: application/x-protobuf`.
-
-## Testing
-
-```bash
-pnpm test          # Run tests once
-pnpm test:watch    # Run tests in watch mode
-```
-
-Tests use [Vitest](https://vitest.dev/) with `@cloudflare/vitest-pool-workers` for integration testing against simulated R2 bindings.
-
-## Type Checking
-
-```bash
-pnpm typecheck
-```
-
-## Linting and Formatting
-
-```bash
-pnpm lint          # Check for lint issues
-pnpm format       # Format source files
-```
-
-Uses [Biome](https://biomejs.dev/) for fast, unified linting and formatting.
-
-## Build
-
-```bash
-pnpm build
-```
-
-Validates the Worker configuration without deploying.
-
-## Deployment
-
-```bash
-pnpm deploy                # Deploy to development
-pnpm deploy --env staging  # Deploy to staging
-pnpm deploy --env production  # Deploy to production
-```
-
-If you enabled authentication, set the secret in each environment:
-
-```bash
-wrangler secret put AUTH_SECRET                # Development
-wrangler secret put AUTH_SECRET --env staging  # Staging
-wrangler secret put AUTH_SECRET --env production  # Production
-```
-
-## Client Integration
-
-This worker serves tiles to any map library that supports HTTP tile sources. Below are examples for common platforms.
-
-### Flutter (flutter_map)
-
-```dart
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
-
-TileLayer(
-  tileProvider: CachedNetworkTileProvider(),
-  urlTemplate: 'https://your-worker.example.com/{mapName}/{z}/{x}/{y}.mvt',
-  additionalOptions: {
-    'mapName': 'your-map',
-  },
-),
-```
-
-### Leaflet (JavaScript)
+<details>
+<summary><b>Leaflet (JavaScript)</b></summary>
 
 ```html
 <script>
@@ -320,7 +348,10 @@ L.tileLayer('https://your-worker.example.com/{mapName}/{z}/{x}/{y}.mvt', {
 </script>
 ```
 
-### MapLibre GL JS (JavaScript)
+</details>
+
+<details>
+<summary><b>MapLibre GL JS</b></summary>
 
 ```javascript
 const map = new maplibregl.Map({
@@ -345,7 +376,44 @@ const map = new maplibregl.Map({
 });
 ```
 
-### React Native (react-native-maps)
+</details>
+
+<details>
+<summary><b>OpenLayers</b></summary>
+
+```javascript
+import TileLayer from 'ol/layer/Tile.js';
+import XYZ from 'ol/source/XYZ.js';
+
+const layer = new TileLayer({
+  source: new XYZ({
+    url: 'https://your-worker.example.com/your-map/{z}/{x}/{y}.mvt',
+  }),
+});
+```
+
+</details>
+
+<details>
+<summary><b>Flutter (flutter_map)</b></summary>
+
+```dart
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
+TileLayer(
+  tileProvider: CachedNetworkTileProvider(),
+  urlTemplate: 'https://your-worker.example.com/{mapName}/{z}/{x}/{y}.mvt',
+  additionalOptions: {
+    'mapName': 'your-map',
+  },
+),
+```
+
+</details>
+
+<details>
+<summary><b>React Native (react-native-maps)</b></summary>
 
 ```jsx
 import MapView, { UrlTile } from 'react-native-maps';
@@ -365,36 +433,10 @@ import MapView, { UrlTile } from 'react-native-maps';
 </MapView>
 ```
 
-### React Native (Mapbox GL)
+</details>
 
-```jsx
-import Mapbox from '@rnmapbox/maps';
-
-<Mapbox.MapView style={{ flex: 1 }}>
-  <Mapbox.RasterSource
-    id="tiles"
-    tileUrlTemplates={['https://your-worker.example.com/your-map/{z}/{x}/{y}.mvt']}
-    tileSize={512}
-  >
-    <Mapbox.RasterLayer id="tile-layer" sourceID="tiles" />
-  </Mapbox.RasterSource>
-</Mapbox.MapView>
-```
-
-### OpenLayers (JavaScript)
-
-```javascript
-import TileLayer from 'ol/layer/Tile.js';
-import XYZ from 'ol/source/XYZ.js';
-
-const layer = new TileLayer({
-  source: new XYZ({
-    url: 'https://your-worker.example.com/your-map/{z}/{x}/{y}.mvt',
-  }),
-});
-```
-
-### Swift (MapKit)
+<details>
+<summary><b>iOS (MapKit)</b></summary>
 
 ```swift
 import MapKit
@@ -406,9 +448,17 @@ tileOverlay.canReplaceMapContent = true
 mapView.addOverlay(tileOverlay, level: .aboveLabels)
 ```
 
-### Kotlin (osmdroid)
+</details>
+
+<details>
+<summary><b>Android (Mapbox / osmdroid)</b></summary>
 
 ```kotlin
+// Mapbox GL — use TileJSON
+val styleUrl = "https://your-worker.example.com/your-map.json"
+mapboxMap.loadStyleUri(styleUrl)
+
+// osmdroid
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.MapTileIndex
 
@@ -425,40 +475,184 @@ val tileSource = object : OnlineTileSourceBase(
 mapView.setTileSource(tileSource)
 ```
 
-### Kotlin (Mapbox Android)
+</details>
 
-```kotlin
-val styleUrl = "https://your-worker.example.com/your-map.json"
-
-mapboxMap.loadStyleUri(styleUrl)
-```
-
-### Testing with curl
+<details>
+<summary><b>Testing with curl</b></summary>
 
 ```bash
-# Fetch tile (replace with your worker URL and valid coordinates)
+# Fetch a tile
 curl https://your-worker.example.com/your-map/12/1516/2021.mvt -o tile.mvt
 
 # Fetch TileJSON metadata
 curl https://your-worker.example.com/your-map.json
 ```
 
-## Security
+</details>
 
-- CORS is controlled by the `ALLOWED_ORIGINS` variable
-- Only GET requests are accepted; POST requests return 405
-- Input is validated before accessing R2 resources
-- No secrets are hardcoded in source or configuration
-- Stack traces are never exposed to clients
-- The `BUCKET` binding restricts access to the configured R2 bucket
-- Optional HMAC-SHA256 signed URL authentication via `AUTH_SECRET` — set it in production to protect your tile endpoints
+---
 
-## Limitations
+## 🚀 Deployment
 
-- CORS preflight (`OPTIONS`) requests are not handled; tile requests are simple GET requests that do not trigger preflight
-- Optional HMAC-SHA256 signed URL authentication must be enabled by setting `AUTH_SECRET` — it is disabled by default
-- Cache is disabled in local development; production uses `caches.default` with the configured `Cache-Control` header
+### Deploy to Cloudflare Workers
 
-## License
+```bash
+# Development (default)
+pnpm deploy
 
-BSD-3-Clause
+# Staging
+pnpm deploy --env staging
+
+# Production
+pnpm deploy --env production
+```
+
+### Deploy to production with auth
+
+```bash
+# 1. Generate a secret
+openssl rand -hex 32
+
+# 2. Set it in your environment
+npx wrangler secret put AUTH_SECRET --env production
+
+# 3. Create the production bucket
+npx wrangler r2 bucket create protomap-production
+
+# 4. Upload your map
+npx wrangler r2 object put protomap-production/my-map.pmtiles --file ./map.pmtiles
+
+# 5. Deploy
+pnpm deploy --env production
+```
+
+### Custom domain
+
+In your Cloudflare dashboard, add a route or custom domain to your worker for a clean URL like `tiles.yourdomain.com`.
+
+---
+
+## 💻 Local Development
+
+### Option A: Local mode (no Cloudflare login)
+
+```bash
+pnpm start
+```
+
+The R2 bucket is simulated in-memory and starts empty. Use this for code changes and testing — tile requests return 404 until you upload data.
+
+### Option B: Remote mode (real R2 bucket)
+
+```bash
+npx wrangler login           # One-time auth
+pnpm start -- --remote       # Or: npx wrangler dev --remote
+```
+
+Connects to your `protomap-development` R2 bucket on Cloudflare's edge. Upload data first:
+
+```bash
+npx wrangler r2 object put protomap-development/my-map.pmtiles --file ./map.pmtiles
+```
+
+The worker serves at **http://localhost:8787**.
+
+---
+
+## 📜 Scripts
+
+| Command | Description |
+|---|---|
+| `pnpm start` | Run worker locally at `localhost:8787` |
+| `pnpm deploy` | Deploy to Cloudflare Workers |
+| `pnpm test` | Run tests once |
+| `pnpm test:watch` | Run tests in watch mode |
+| `pnpm typecheck` | TypeScript type checking |
+| `pnpm lint` | Check for lint issues with Biome |
+| `pnpm format` | Format source files with Biome |
+| `pnpm build` | Validate Worker config (dry-run deploy) |
+
+---
+
+## 🏗️ Architecture
+
+```
+Request  →  index.ts (fetch handler)
+               ├── Validate method          ← 405 if not GET
+               ├── Parse URL path            ← 404 if invalid route
+               ├── Authenticate              ← 401/403 if AUTH_SECRET set
+               ├── Check edge cache          ← caches.default
+               ├── Read from R2              ← R2Source → PMTiles archive
+               ├── Serve tile or TileJSON    ← servePmtilesRequest()
+               ├── Store in cache            ← ctx.waitUntil()
+               └── Return response           ← with CORS + security headers
+```
+
+The worker is intentionally minimal — a single `fetch` handler that delegates to focused modules:
+
+| Module | Responsibility |
+|---|---|
+| `src/index.ts` | Request routing, orchestration, caching |
+| `src/auth/` | HMAC-SHA256 signed URL verification (pluggable version handlers) |
+| `src/pmtiles/` | PMTiles parsing, tile serving, content-type mapping |
+| `src/storage/` | R2 bucket access implementing pmtiles `Source` interface |
+| `src/shared/` | URL parsing, hex encoding, map tile coordinate utilities |
+| `src/error/` | Structured error classes with typed codes and HTTP status mapping |
+
+---
+
+## 🔒 Security
+
+- **CORS** — Controlled by `ALLOWED_ORIGINS` env var. Use specific origins in production, never `*` for sensitive data.
+- **Method restriction** — Only `GET` is accepted. All other methods return `405 Method Not Allowed`.
+- **Input validation** — Paths, tile coordinates, and query parameters are validated before any R2 access.
+- **Path traversal protection** — Map names and keys are validated against traversal patterns.
+- **No secret leakage** — Secrets are Cloudflare-bound via `wrangler secret put`, never in source.
+- **No stack traces** — Production errors return structured JSON without internal details.
+- **Constant-time comparison** — HMAC verification uses `timingSafeEqual` to prevent timing attacks.
+- **Rate limiting** — For production, configure [Cloudflare Rate Limiting Rules](https://developers.cloudflare.com/waf/rate-limiting-rules/) at the zone level to protect against excessive requests and control R2 egress costs.
+
+---
+
+## ⚠️ Limitations
+
+- **CORS preflight** — `OPTIONS` requests are not handled. Tile requests are simple `GET` requests that do not trigger preflight in browsers.
+- **Auth disabled by default** — Signed URL authentication must be explicitly enabled by setting `AUTH_SECRET`.
+- **Cache in dev** — Edge caching is disabled during local development. Production automatically uses `caches.default`.
+- **Compression** — Gzip-deflated tiles are supported. Brotli and Zstd are not currently supported (return `501 Not Implemented`).
+- **No analytics** — This worker does not collect usage data. Monitor via Cloudflare dashboard and R2 logs.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! This project follows [Conventional Commits](https://www.conventionalcommits.org/) — commit messages are linted via commitlint + husky.
+
+```bash
+# Before pushing, make sure checks pass
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+```
+
+- **Bug reports & feature requests** — Open a [GitHub issue](https://github.com/your-org/protomap-worker/issues/new)
+- **Pull requests** — Please open an issue first to discuss significant changes, and keep tests updated
+- **Code style** — [Biome](https://biomejs.dev/) handles formatting and linting. Run `pnpm biome` to auto-fix.
+- **Testing** — We use [Vitest](https://vitest.dev/) with `@cloudflare/vitest-pool-workers`. Every meaningful change should include tests.
+
+---
+
+## 📄 License
+
+[BSD-3-Clause](./LICENSE)
+
+© 2021 Protomaps LLC, © 2026 Ventairy Inc.
+
+The PMTiles specification is public domain / CC0. Sample tilesets have their own license terms. The reference implementation and this worker are BSD-3-Clause.
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ for self-sovereign map infrastructure.</sub>
+</div>

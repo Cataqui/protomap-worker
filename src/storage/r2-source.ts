@@ -1,13 +1,7 @@
 import { EtagMismatch, type RangeResponse, type Source } from "pmtiles";
+import { ArchiveNotFoundError } from "../error";
 import { MapTileUtils } from "../shared/map-tile.utils";
 import type { Env } from "../types/env.type";
-
-export class KeyNotFoundError extends Error {
-  constructor(message?: string) {
-    super(message);
-    this.name = "KeyNotFoundError";
-  }
-}
 
 export class R2Source implements Source {
   env: Env;
@@ -28,7 +22,7 @@ export class R2Source implements Source {
       onlyIf: { etagMatches: etag },
     });
 
-    if (!resp) throw new KeyNotFoundError("Archive not found");
+    if (!resp) throw new ArchiveNotFoundError(this.archiveName);
 
     const o = resp as R2ObjectBody;
 

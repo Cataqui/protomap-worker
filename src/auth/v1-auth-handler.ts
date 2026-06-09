@@ -1,9 +1,10 @@
+import { AuthExpInvalidError, AuthExpiredError, AuthParamMissingError, AuthSigInvalidHexError, AuthSigMismatchError } from "../error";
 import { BytesUtils } from "../shared/bytes.utils";
-import type { AuthResult, V1AuthParam } from "./auth.types";
+import type { V1AuthParam } from "./auth.types";
 import { AuthUtils } from "./auth.utils";
 import type { AuthHandler } from "./auth-handler.interface";
 
-export const V1_AUTH_PARAMS = ["v", "sig", "exp"] as const;
+export const V1_AUTH_PARAMS = ["sig", "exp"] as const;
 type V1AuthParamsMap = { [K in V1AuthParam]: string | null };
 
 export class V1AuthHandler implements AuthHandler {
@@ -22,29 +23,26 @@ export class V1AuthHandler implements AuthHandler {
     for (const param of V1_AUTH_PARAMS) url.searchParams.delete(param);
   }
 
-  async authenticate(url: URL, secret: string): Promise<AuthResult> {
+  async authenticate(url: URL, secret: string): Promise<void> {
     const params = this.getParamsFromUrl(url);
 
-    if (!params.sig || !params.exp) return { ok: false, status: 401, message: "Unauthorized" };
+    for (const param of V1_AUTH_PARAMS) if (!params[param]) throw new AuthParamMissingError(param);
 
-    const expirationNumber = Number(params.exp);
+    // biome-ignore lint/style/noNonNullAssertion: validated above
+    const exp = params.exp!;
+    // biome-ignore lint/style/noNonNullAssertion: validated above
+    const sig = params.sig!;
+    const expirationNumber = Number(exp);
 
-    if (!Number.isInteger(expirationNumber) || expirationNumber < 0) {
-      return { ok: false, status: 401, message: "Unauthorized" };
-    }
+    if (!Number.isInteger(expirationNumber) || expirationNumber < 0) throw new AuthExpInvalidError(exp);
 
-    if (expirationNumber < Math.floor(Date.now() / 1000)) {
-      return { ok: false, status: 403, message: "Forbidden" };
-    }
+    if (expirationNumber < Math.floor(Date.now() / 1000)) throw new AuthExpiredError(expirationNumber);
 
     const message = `v1:${expirationNumber}`;
     const computed = await AuthUtils.computeHmac(secret, message);
-    const sigBytes = BytesUtils.hexToBytes(params.sig);
+    const sigBytes = BytesUtils.hexToBytes(sig);
 
-    if (!sigBytes || !AuthUtils.timingSafeEqual(sigBytes, computed)) {
-      return { ok: false, status: 401, message: "Unauthorized" };
-    }
-
-    return { ok: true };
+    if (!sigBytes) throw new AuthSigInvalidHexError();
+    if (!AuthUtils.timingSafeEqual(sigBytes, computed)) throw new AuthSigMismatchError();
   }
 }

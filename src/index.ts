@@ -1,68 +1,67 @@
 import { PMTiles } from "pmtiles";
-import type { AuthResult } from "./auth/auth.types";
 import { AUTH_VERSIONS } from "./auth/auth-versions";
+import { AuthParamMissingError, AuthVersionMissingError, AuthVersionUnknownError, MethodNotAllowedError, RouteNotFoundError, WorkerError } from "./error";
 import { nativeDecompress, PMTILES_CACHE } from "./pmtiles/pmtiles-cache";
 import { servePmtilesRequest } from "./pmtiles/tile-serving";
 import { MapTileUtils } from "./shared/map-tile.utils";
-import { KeyNotFoundError, R2Source } from "./storage/r2-source";
+import { R2Source } from "./storage/r2-source";
 import type { Env } from "./types/env.type";
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    if (request.method.toUpperCase() === "POST") return new Response(undefined, { status: 405 });
-
-    const url = new URL(request.url);
-    const { ok, name, tile, ext } = MapTileUtils.tilePath(url.pathname);
-
-    if (!ok) return new Response("Invalid URL", { status: 404 });
-
-    if (env.AUTH_SECRET) {
-      const result = await _authenticateTileRequest(url, env.AUTH_SECRET);
-      if (!result.ok) return _buildAuthErrorResponse(result);
-    }
-
-    const cacheUrl = new URL(request.url);
-    for (const handler of Object.values(AUTH_VERSIONS)) handler.stripParamsFromUrl(cacheUrl);
-
     const allowedOrigin = typeof env.ALLOWED_ORIGINS !== "undefined" ? _resolveAllowedOrigin(env.ALLOWED_ORIGINS, request.headers.get("Origin")) : "";
 
-    const cache = caches.default;
-    const cached = await cache.match(cacheUrl.href);
-
-    if (cached) return _getCachedResponse(cached, allowedOrigin);
-
-    const source = new R2Source(env, name);
-    const pmtiles = new PMTiles(source, PMTILES_CACHE, nativeDecompress);
-
     try {
+      if (request.method.toUpperCase() !== "GET") throw new MethodNotAllowedError(request.method);
+
+      const url = new URL(request.url);
+      const { ok, name, tile, ext } = MapTileUtils.tilePath(url.pathname);
+
+      if (!ok) throw new RouteNotFoundError(url.pathname);
+
+      if (env.AUTH_SECRET) await _authenticateTileRequest(url, env.AUTH_SECRET);
+
+      const cacheUrl = new URL(request.url);
+      cacheUrl.searchParams.delete("v");
+      for (const handler of Object.values(AUTH_VERSIONS)) handler.stripParamsFromUrl(cacheUrl);
+
+      const cache = caches.default;
+      const cached = await cache.match(cacheUrl.href);
+
+      if (cached) return _getCachedResponse(cached, allowedOrigin);
+
+      const source = new R2Source(env, name);
+      const pmtiles = new PMTiles(source, PMTILES_CACHE, nativeDecompress);
+
       const result = await servePmtilesRequest(pmtiles, name, tile, ext, env.PUBLIC_HOSTNAME || url.hostname);
       const headers = new Headers();
       if (result.contentType) headers.set("Content-Type", result.contentType);
 
       return _createCacheableResponse(ctx, cache, cacheUrl.href, allowedOrigin, env.CACHE_CONTROL, result.body, headers, result.status);
     } catch (e) {
-      if (e instanceof KeyNotFoundError) {
-        return _createCacheableResponse(ctx, cache, cacheUrl.href, allowedOrigin, env.CACHE_CONTROL, "Archive not found", new Headers(), 404);
-      }
+      if (e instanceof WorkerError) {
+        const response = e.toResponse();
 
+        if (allowedOrigin) response.headers.set("Access-Control-Allow-Origin", allowedOrigin);
+        response.headers.set("Vary", "Origin");
+        return response;
+      }
       throw e;
     }
   },
 };
 
-async function _authenticateTileRequest(url: URL, secret: string): Promise<AuthResult> {
+async function _authenticateTileRequest(url: URL, secret: string): Promise<void> {
   const v = url.searchParams.get("v");
 
-  if (!v) return { ok: false, status: 401, message: "Unauthorized" };
+  if (!v) throw new AuthVersionMissingError(Object.keys(AUTH_VERSIONS));
 
   const handler = AUTH_VERSIONS[v];
-  if (!handler) return { ok: false, status: 401, message: "Unauthorized" };
+  if (!handler) throw new AuthVersionUnknownError(v, Object.keys(AUTH_VERSIONS));
 
-  for (const param of handler.requiredParams()) {
-    if (!url.searchParams.has(param)) return { ok: false, status: 401, message: "Unauthorized" };
-  }
+  for (const param of handler.requiredParams()) if (!url.searchParams.has(param)) throw new AuthParamMissingError(param);
 
-  return handler.authenticate(url, secret);
+  await handler.authenticate(url, secret);
 }
 
 function _resolveAllowedOrigin(allowedOrigins: string, requestOrigin: string | null): string {
@@ -99,11 +98,4 @@ function _getCachedResponse(cached: Response, allowedOrigin: string): Response {
   if (allowedOrigin) headers.set("Access-Control-Allow-Origin", allowedOrigin);
   headers.set("Vary", "Origin");
   return new Response(cached.body, { headers, status: cached.status });
-}
-
-function _buildAuthErrorResponse(result: AuthResult & { ok: false }): Response {
-  return new Response(result.message, {
-    status: result.status,
-    headers: { "Content-Type": "text/plain" },
-  });
 }

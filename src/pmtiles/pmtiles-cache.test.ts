@@ -1,5 +1,6 @@
 import { Compression } from "pmtiles";
 import { describe, expect, it } from "vitest";
+import { WorkerErrorCodes } from "../error";
 import { nativeDecompress, PMTILES_CACHE } from "./pmtiles-cache";
 
 describe("nativeDecompress", () => {
@@ -15,14 +16,20 @@ describe("nativeDecompress", () => {
     expect(result).toBe(buf);
   });
 
-  it("throws for unsupported compression", async () => {
+  it("throws COMPRESSION_NOT_SUPPORTED for Brotli compression", async () => {
     const buf = new ArrayBuffer(8);
-    await expect(nativeDecompress(buf, Compression.Brotli)).rejects.toThrow("Compression method not supported");
+    await expect(nativeDecompress(buf, Compression.Brotli)).rejects.toMatchObject({
+      code: WorkerErrorCodes.COMPRESSION_NOT_SUPPORTED,
+      status: 501,
+    });
   });
 
-  it("throws for Zstd compression", async () => {
+  it("throws COMPRESSION_NOT_SUPPORTED for Zstd compression", async () => {
     const buf = new ArrayBuffer(8);
-    await expect(nativeDecompress(buf, Compression.Zstd)).rejects.toThrow("Compression method not supported");
+    await expect(nativeDecompress(buf, Compression.Zstd)).rejects.toMatchObject({
+      code: WorkerErrorCodes.COMPRESSION_NOT_SUPPORTED,
+      status: 501,
+    });
   });
 });
 

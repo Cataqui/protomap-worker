@@ -1,4 +1,5 @@
 import { Compression, ResolvedValueCache } from "pmtiles";
+import { CompressionNotSupportedError } from "../error";
 
 async function _nativeDecompress(buf: ArrayBuffer, compression: Compression): Promise<ArrayBuffer> {
   if (compression === Compression.None || compression === Compression.Unknown) return buf;
@@ -9,7 +10,7 @@ async function _nativeDecompress(buf: ArrayBuffer, compression: Compression): Pr
     return new Response(result).arrayBuffer();
   }
 
-  throw new Error("Compression method not supported");
+  throw new CompressionNotSupportedError(Compression[compression] || String(compression));
 }
 
 export const PMTILES_CACHE = new ResolvedValueCache(25, undefined, _nativeDecompress);

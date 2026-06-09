@@ -4,6 +4,7 @@ import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test"
 import { describe, expect, it } from "vitest";
 import worker from "../src/index";
 import { AuthUtils } from "./auth/auth.utils";
+import { WorkerErrorCodes } from "./error";
 
 const BASIC_ENV = {
   // biome-ignore lint/style/useNamingConvention: env binding names
@@ -17,6 +18,9 @@ describe("Worker fetch handler", () => {
     const response = await worker.fetch(request, BASIC_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(405);
+    expect(response.headers.get("Content-Type")).toBe("application/json");
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.METHOD_NOT_ALLOWED);
   });
 
   it("responds with 404 for invalid paths", async () => {
@@ -25,6 +29,9 @@ describe("Worker fetch handler", () => {
     const response = await worker.fetch(request, BASIC_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(404);
+    expect(response.headers.get("Content-Type")).toBe("application/json");
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.ROUTE_NOT_FOUND);
   });
 
   it("responds with 404 for missing archives", async () => {
@@ -33,6 +40,9 @@ describe("Worker fetch handler", () => {
     const response = await worker.fetch(request, BASIC_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(404);
+    expect(response.headers.get("Content-Type")).toBe("application/json");
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.ARCHIVE_NOT_FOUND);
   });
 
   it("handles tile path with valid format but missing archive", async () => {
@@ -41,6 +51,7 @@ describe("Worker fetch handler", () => {
     const response = await worker.fetch(request, BASIC_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(404);
+    expect(response.headers.get("Content-Type")).toBe("application/json");
   });
 
   it("handles tileset JSON path with missing archive", async () => {
@@ -49,6 +60,7 @@ describe("Worker fetch handler", () => {
     const response = await worker.fetch(request, BASIC_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(404);
+    expect(response.headers.get("Content-Type")).toBe("application/json");
   });
 
   it("sets CORS headers for allowed origins", async () => {
@@ -82,123 +94,156 @@ const AUTH_ENV = {
 };
 
 describe("Worker authentication", () => {
-  it("rejects request without v param", async () => {
+  it("rejects request without v param — AUTH_VERSION_MISSING", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?sig=abc&exp=123");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
-    expect(await response.text()).toBe("Unauthorized");
+    expect(response.headers.get("Content-Type")).toBe("application/json");
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_VERSION_MISSING);
   });
 
-  it("rejects request without sig param", async () => {
+  it("rejects request without sig param — AUTH_PARAM_MISSING", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?v=1&exp=123");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_PARAM_MISSING);
+    expect(body.param).toBe("sig");
   });
 
-  it("rejects request without exp param", async () => {
+  it("rejects request without exp param — AUTH_PARAM_MISSING", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=abc");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_PARAM_MISSING);
   });
 
-  it("rejects request without any auth params", async () => {
+  it("rejects request without any auth params — AUTH_VERSION_MISSING", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_VERSION_MISSING);
   });
 
-  it("rejects request with unknown version v=2", async () => {
+  it("rejects request with unknown version v=2 — AUTH_VERSION_UNKNOWN", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?v=2&sig=abc&exp=9999999999");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_VERSION_UNKNOWN);
+    expect(body.provided).toBe("2");
   });
 
-  it("rejects request with unknown version v=99", async () => {
+  it("rejects request with unknown version v=99 — AUTH_VERSION_UNKNOWN", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?v=99&sig=abc&exp=9999999999");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_VERSION_UNKNOWN);
+    expect(body.provided).toBe("99");
   });
 
-  it("rejects request with non-hex sig", async () => {
+  it("rejects request with non-hex sig — AUTH_SIG_INVALID_HEX", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=nothex&exp=9999999999");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_SIG_INVALID_HEX);
   });
 
-  it("rejects request with non-numeric exp", async () => {
+  it("rejects request with non-numeric exp — AUTH_EXP_INVALID", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=abc&exp=notanumber");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_EXP_INVALID);
+    expect(body.param).toBe("exp");
   });
 
-  it("rejects request with negative exp", async () => {
+  it("rejects request with negative exp — AUTH_EXP_INVALID", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=abc&exp=-1");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_EXP_INVALID);
   });
 
-  it("rejects request with floating-point exp", async () => {
+  it("rejects request with floating-point exp — AUTH_EXP_INVALID", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=abc&exp=123.456");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_EXP_INVALID);
   });
 
-  it("rejects expired request", async () => {
+  it("rejects expired request — AUTH_EXPIRED", async () => {
     const url = await createAuthUrl(-3600);
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(403);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_EXPIRED);
+    expect(body.param).toBe("exp");
   });
 
-  it("rejects expired request with exp 1 second in past", async () => {
+  it("rejects expired request with exp 1 second in past — AUTH_EXPIRED", async () => {
     const url = await createAuthUrl(-1);
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(403);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_EXPIRED);
   });
 
-  it("rejects request with invalid signature", async () => {
+  it("rejects request with invalid signature — AUTH_SIG_INVALID_HEX", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=invalidsignature&exp=9999999999");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_SIG_INVALID_HEX);
   });
 
-  it("rejects request with wrong secret", async () => {
+  it("rejects request with wrong secret — AUTH_SIG_MISMATCH", async () => {
     const url = await createAuthUrl(3600);
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, { ...AUTH_ENV, AUTH_SECRET: "wrong-secret" }, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_SIG_MISMATCH);
   });
 
-  it("rejects request when exp is tampered after signing", async () => {
+  it("rejects request when exp is tampered after signing — AUTH_SIG_MISMATCH", async () => {
     const exp = Math.floor(Date.now() / 1000) + 3600;
     const message = `v1:${exp}`;
     const sig = await AuthUtils.computeHmac("test-secret-key", message);
@@ -208,23 +253,29 @@ describe("Worker authentication", () => {
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_SIG_MISMATCH);
   });
 
-  it("rejects odd-length hex sig", async () => {
+  it("rejects odd-length hex sig — AUTH_SIG_INVALID_HEX", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=abc&exp=9999999999");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_SIG_INVALID_HEX);
   });
 
-  it("rejects sig with invalid hex characters", async () => {
+  it("rejects sig with invalid hex characters — AUTH_SIG_INVALID_HEX", async () => {
     const url = new URL("http://example.com/mymap/0/0/0.png?v=1&sig=zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz&exp=9999999999");
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_SIG_INVALID_HEX);
   });
 
   it("passes request with valid signature", async () => {
@@ -266,11 +317,11 @@ describe("Worker authentication", () => {
     expect(response.status).toBe(404);
   });
 
-  it("returns Content-Type text/plain for auth errors", async () => {
+  it("returns Content-Type application/json for auth errors", async () => {
     const request = new Request("http://example.com/mymap/0/0/0.png");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
-    expect(response.headers.get("Content-Type")).toBe("text/plain");
+    expect(response.headers.get("Content-Type")).toBe("application/json");
   });
 });
