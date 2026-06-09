@@ -1,7 +1,7 @@
-import type { AuthHandler } from "../interfaces/auth-handler.interface";
 import { BytesUtils } from "../shared/bytes.utils";
 import type { AuthResult, V1AuthParam } from "./auth.types";
 import { AuthUtils } from "./auth.utils";
+import type { AuthHandler } from "./auth-handler.interface";
 
 export const V1_AUTH_PARAMS = ["v", "sig", "exp"] as const;
 type V1AuthParamsMap = { [K in V1AuthParam]: string | null };

@@ -1,4 +1,4 @@
-import type { AuthResult } from "../auth/auth.types";
+import type { AuthResult } from "./auth.types";
 
 export interface AuthHandler {
   authenticate(url: URL, secret: string): Promise<AuthResult>;

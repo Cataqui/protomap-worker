@@ -1,75 +1,56 @@
-import { Compression, EtagMismatch, PMTiles, type RangeResponse, ResolvedValueCache, type Source, TileType, tileTypeExt } from "pmtiles";
+import { PMTiles } from "pmtiles";
 import type { AuthResult } from "./auth/auth.types";
 import { AUTH_VERSIONS } from "./auth/auth-versions";
+import { nativeDecompress, PMTILES_CACHE } from "./pmtiles/pmtiles-cache";
+import { servePmtilesRequest } from "./pmtiles/tile-serving";
 import { MapTileUtils } from "./shared/map-tile.utils";
+import { KeyNotFoundError, R2Source } from "./storage/r2-source";
+import type { Env } from "./types/env.type";
 
-interface Env {
-  // biome-ignore lint: config name
-  ALLOWED_ORIGINS?: string;
-  // biome-ignore lint: config name
-  AUTH_SECRET?: string;
-  // biome-ignore lint: config name
-  BUCKET: R2Bucket;
-  // biome-ignore lint: config name
-  CACHE_CONTROL?: string;
-  // biome-ignore lint: config name
-  PMTILES_PATH?: string;
-  // biome-ignore lint: config name
-  PUBLIC_HOSTNAME?: string;
-}
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    if (request.method.toUpperCase() === "POST") return new Response(undefined, { status: 405 });
 
-class KeyNotFoundError extends Error {}
+    const url = new URL(request.url);
+    const { ok, name, tile, ext } = MapTileUtils.tilePath(url.pathname);
 
-async function nativeDecompress(buf: ArrayBuffer, compression: Compression): Promise<ArrayBuffer> {
-  if (compression === Compression.None || compression === Compression.Unknown) return buf;
+    if (!ok) return new Response("Invalid URL", { status: 404 });
 
-  if (compression === Compression.Gzip) {
-    const stream = new Response(buf).body;
-    const result = stream?.pipeThrough(new DecompressionStream("gzip"));
-    return new Response(result).arrayBuffer();
-  }
+    if (env.AUTH_SECRET) {
+      const result = await _authenticateTileRequest(url, env.AUTH_SECRET);
+      if (!result.ok) return _buildAuthErrorResponse(result);
+    }
 
-  throw new Error("Compression method not supported");
-}
+    const cacheUrl = new URL(request.url);
+    for (const handler of Object.values(AUTH_VERSIONS)) handler.stripParamsFromUrl(cacheUrl);
 
-const CACHE = new ResolvedValueCache(25, undefined, nativeDecompress);
+    const allowedOrigin = typeof env.ALLOWED_ORIGINS !== "undefined" ? _resolveAllowedOrigin(env.ALLOWED_ORIGINS, request.headers.get("Origin")) : "";
 
-class R2Source implements Source {
-  env: Env;
-  archiveName: string;
+    const cache = caches.default;
+    const cached = await cache.match(cacheUrl.href);
 
-  constructor(env: Env, archiveName: string) {
-    this.env = env;
-    this.archiveName = archiveName;
-  }
+    if (cached) return _getCachedResponse(cached, allowedOrigin);
 
-  getKey() {
-    return this.archiveName;
-  }
+    const source = new R2Source(env, name);
+    const pmtiles = new PMTiles(source, PMTILES_CACHE, nativeDecompress);
 
-  async getBytes(offset: number, length: number, _signal?: AbortSignal, etag?: string): Promise<RangeResponse> {
-    const resp = await this.env.BUCKET.get(MapTileUtils.pmtilesPath(this.archiveName, this.env.PMTILES_PATH), {
-      range: { offset: offset, length: length },
-      onlyIf: { etagMatches: etag },
-    });
+    try {
+      const result = await servePmtilesRequest(pmtiles, name, tile, ext, env.PUBLIC_HOSTNAME || url.hostname);
+      const headers = new Headers();
+      if (result.contentType) headers.set("Content-Type", result.contentType);
 
-    if (!resp) throw new KeyNotFoundError("Archive not found");
+      return _createCacheableResponse(ctx, cache, cacheUrl.href, allowedOrigin, env.CACHE_CONTROL, result.body, headers, result.status);
+    } catch (e) {
+      if (e instanceof KeyNotFoundError) {
+        return _createCacheableResponse(ctx, cache, cacheUrl.href, allowedOrigin, env.CACHE_CONTROL, "Archive not found", new Headers(), 404);
+      }
 
-    const o = resp as R2ObjectBody;
+      throw e;
+    }
+  },
+};
 
-    if (!o.body) throw new EtagMismatch();
-
-    const a = await o.arrayBuffer();
-    return {
-      data: a,
-      etag: o.etag,
-      cacheControl: o.httpMetadata?.cacheControl,
-      expires: o.httpMetadata?.cacheExpiry?.toISOString(),
-    };
-  }
-}
-
-async function _authenticate(url: URL, secret: string): Promise<AuthResult> {
+async function _authenticateTileRequest(url: URL, secret: string): Promise<AuthResult> {
   const v = url.searchParams.get("v");
 
   if (!v) return { ok: false, status: 401, message: "Unauthorized" };
@@ -84,128 +65,45 @@ async function _authenticate(url: URL, secret: string): Promise<AuthResult> {
   return handler.authenticate(url, secret);
 }
 
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    if (request.method.toUpperCase() === "POST") return new Response(undefined, { status: 405 });
+function _resolveAllowedOrigin(allowedOrigins: string, requestOrigin: string | null): string {
+  for (const o of allowedOrigins.split(",")) {
+    if (o === requestOrigin || o === "*") return o;
+  }
+  return "";
+}
 
-    const url = new URL(request.url);
-    const { ok, name, tile, ext } = MapTileUtils.tilePath(url.pathname);
+async function _createCacheableResponse(
+  ctx: ExecutionContext,
+  cache: Cache,
+  cacheKey: string,
+  allowedOrigin: string,
+  cacheControl: string | undefined,
+  body: ArrayBuffer | string | undefined,
+  headers: Headers,
+  status: number,
+): Promise<Response> {
+  headers.set("Cache-Control", cacheControl || "public, max-age=86400");
 
-    const cache = caches.default;
+  const cacheable = new Response(body, { headers, status });
+  ctx.waitUntil(cache.put(cacheKey, cacheable));
 
-    if (!ok) return new Response("Invalid URL", { status: 404 });
+  const responseHeaders = new Headers(headers);
+  if (allowedOrigin) responseHeaders.set("Access-Control-Allow-Origin", allowedOrigin);
+  responseHeaders.set("Vary", "Origin");
 
-    if (env.AUTH_SECRET) {
-      const result = await _authenticate(url, env.AUTH_SECRET);
-      if (!result.ok) {
-        return new Response(result.message, {
-          status: result.status,
-          headers: { "Content-Type": "text/plain" },
-        });
-      }
-    }
+  return new Response(body, { headers: responseHeaders, status });
+}
 
-    const cacheUrl = new URL(request.url);
-    for (const handler of Object.values(AUTH_VERSIONS)) handler.stripParamsFromUrl(cacheUrl);
+function _getCachedResponse(cached: Response, allowedOrigin: string): Response {
+  const headers = new Headers(cached.headers);
+  if (allowedOrigin) headers.set("Access-Control-Allow-Origin", allowedOrigin);
+  headers.set("Vary", "Origin");
+  return new Response(cached.body, { headers, status: cached.status });
+}
 
-    const cacheKey = cacheUrl.href;
-
-    let allowedOrigin = "";
-    if (typeof env.ALLOWED_ORIGINS !== "undefined") {
-      for (const o of env.ALLOWED_ORIGINS.split(",")) {
-        if (o === request.headers.get("Origin") || o === "*") {
-          allowedOrigin = o;
-        }
-      }
-    }
-
-    const cached = await cache.match(cacheKey);
-
-    if (cached) {
-      const respHeaders = new Headers(cached.headers);
-      if (allowedOrigin) respHeaders.set("Access-Control-Allow-Origin", allowedOrigin);
-      respHeaders.set("Vary", "Origin");
-
-      return new Response(cached.body, {
-        headers: respHeaders,
-        status: cached.status,
-      });
-    }
-
-    const cacheableResponse = (body: ArrayBuffer | string | undefined, cacheableHeaders: Headers, status: number) => {
-      cacheableHeaders.set("Cache-Control", env.CACHE_CONTROL || "public, max-age=86400");
-
-      const cacheable = new Response(body, {
-        headers: cacheableHeaders,
-        status: status,
-      });
-
-      ctx.waitUntil(cache.put(cacheKey, cacheable));
-
-      const respHeaders = new Headers(cacheableHeaders);
-      if (allowedOrigin) respHeaders.set("Access-Control-Allow-Origin", allowedOrigin);
-      respHeaders.set("Vary", "Origin");
-      return new Response(body, { headers: respHeaders, status: status });
-    };
-
-    const cacheableHeaders = new Headers();
-    const source = new R2Source(env, name);
-    const p = new PMTiles(source, CACHE, nativeDecompress);
-    try {
-      const pHeader = await p.getHeader();
-
-      if (!tile) {
-        cacheableHeaders.set("Content-Type", "application/json");
-        const t = await p.getTileJson(`https://${env.PUBLIC_HOSTNAME || url.hostname}/${name}`);
-        return cacheableResponse(JSON.stringify(t), cacheableHeaders, 200);
-      }
-
-      if (tile[0] < pHeader.minZoom || tile[0] > pHeader.maxZoom) {
-        return cacheableResponse(undefined, cacheableHeaders, 404);
-      }
-
-      const extToType: Record<string, TileType> = {
-        mvt: TileType.Mvt,
-        pbf: TileType.Mvt, // allow this for now. Eventually we will delete this in favor of .mvt
-        png: TileType.Png,
-        jpg: TileType.Jpeg,
-        webp: TileType.Webp,
-        avif: TileType.Avif,
-      };
-
-      const expectedType = extToType[ext];
-
-      if (pHeader.tileType !== expectedType && tileTypeExt(pHeader.tileType) !== "") {
-        return cacheableResponse(`Bad request: requested .${ext} but archive has type ${tileTypeExt(pHeader.tileType)}`, cacheableHeaders, 400);
-      }
-
-      const tiledata = await p.getZxy(tile[0], tile[1], tile[2]);
-
-      switch (pHeader.tileType) {
-        case TileType.Mvt:
-          cacheableHeaders.set("Content-Type", "application/x-protobuf");
-          break;
-        case TileType.Png:
-          cacheableHeaders.set("Content-Type", "image/png");
-          break;
-        case TileType.Jpeg:
-          cacheableHeaders.set("Content-Type", "image/jpeg");
-          break;
-        case TileType.Webp:
-          cacheableHeaders.set("Content-Type", "image/webp");
-          break;
-      }
-
-      if (tiledata) {
-        return cacheableResponse(tiledata.data, cacheableHeaders, 200);
-      }
-
-      return cacheableResponse(undefined, cacheableHeaders, 204);
-    } catch (e) {
-      if (e instanceof KeyNotFoundError) {
-        return cacheableResponse("Archive not found", cacheableHeaders, 404);
-      }
-      throw e;
-    }
-  },
-};
+function _buildAuthErrorResponse(result: AuthResult & { ok: false }): Response {
+  return new Response(result.message, {
+    status: result.status,
+    headers: { "Content-Type": "text/plain" },
+  });
+}
