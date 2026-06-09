@@ -1,21 +1,19 @@
-export const pmtilesPath = (name: string, setting?: string): string => {
+function pmtilesPath(name: string, setting?: string): string {
   if (setting) {
     return setting.replaceAll("{name}", name);
   }
   return `${name}.pmtiles`;
-};
+}
 
 const TILE = /^\/(?<NAME>[0-9a-zA-Z/!\-_.*'()]+)\/(?<Z>\d+)\/(?<X>\d+)\/(?<Y>\d+).(?<EXT>[a-z]+)$/;
 const TILESET = /^\/(?<NAME>[0-9a-zA-Z/!\-_.*'()]+).json$/;
 
-export const tilePath = (
-  path: string,
-): {
+function tilePath(path: string): {
   ok: boolean;
   name: string;
   tile?: [number, number, number];
   ext: string;
-} => {
+} {
   const tileMatch = path.match(TILE);
 
   if (tileMatch) {
@@ -31,4 +29,9 @@ export const tilePath = (
   }
 
   return { ok: false, name: "", tile: [0, 0, 0], ext: "" };
-};
+}
+
+export const MapTileUtils = {
+  pmtilesPath,
+  tilePath,
+} as const;

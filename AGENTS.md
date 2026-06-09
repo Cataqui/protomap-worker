@@ -70,13 +70,13 @@ Rules:
 
 ### Environment Variables
 
-Local runtime configuration belongs in the root `.env` file.
+Local runtime configuration belongs in the root `.dev.vars` file.
 
 Rules:
 
-- `.env` must remain local-only and uncommitted.
-- `.env.example` is the committed template.
-- Any new required environment variable must be added to `.env.example`.
+- `.dev.vars` must remain local-only and uncommitted.
+- `.dev.vars.example` is the committed template.
+- Any new required environment variable must be added to `.dev.vars.example`.
 - Any new required environment variable must be documented in `README.md`.
 - Secrets must never be hardcoded in source, tests, examples, or documentation.
 
@@ -97,7 +97,7 @@ When adding or changing a binding:
 
 1. Update the Worker types.
 2. Update Wrangler configuration.
-3. Update `.env.example` when applicable.
+3. Update `.dev.vars.example` when applicable.
 4. Update `README.md`.
 5. Add or update tests covering the behavior.
 
@@ -423,6 +423,131 @@ Any change affecting setup, scripts, deployment, environment variables, public r
 
 If README updates are intentionally not made, explain why.
 
+### 7.9 Prefix Private Functions with Underscore
+
+Functions that are used only within a single module (i.e., not exported) must be prefixed with `_`. This makes it immediately clear which functions are internal implementation details and which are part of the module's public interface. Private functions must be placed at the bottom of the file, after all exported functions and types.
+
+```typescript
+// Good: internal helper is prefixed
+function _hexToBytes(hex: string): Uint8Array | null { ... }
+function _timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean { ... }
+export async function authenticateTileRequest(url: URL, secret: string): Promise<AuthResult> { ... }
+
+// Bad: no visual distinction between public and private
+function hexToBytes(hex: string): Uint8Array | null { ... }
+export async function authenticate(url: URL, secret: string): Promise<AuthResult> { ... }
+```
+
+Exceptions:
+- Class methods (use TypeScript `private` keyword instead).
+- Functions intended to be tested directly (test files import them by name — prefixing with `_` adds friction; prefer testing through the public API or make an exception with a comment).
+
+### 7.10 Prefer Inline Types Over Single-Use Interfaces
+
+Do not define a named `interface` (or `type`) if it is used in only one location. Prefer an inline type literal instead.
+
+This keeps the definition next to its usage and avoids polluting the module's type namespace with single-use names.
+
+```typescript
+// Good: inline type literal, used once
+async function authenticate(url: URL, secret: string): Promise<
+  { ok: true } | { ok: false; status: 401 | 403; message: string }
+> { ... }
+
+// Bad: named interface used in exactly one place
+interface AuthResult {
+  ok: boolean;
+  status?: number;
+  message?: string;
+}
+async function authenticate(url: URL, secret: string): Promise<AuthResult> { ... }
+```
+
+Exceptions:
+- The type is exported and part of the module's public API contract.
+- The type is used in two or more distinct locations.
+- An inline type would harm readability due to complexity (use judgement — prefer extracting only when it genuinely helps).
+
+### 7.11 Prefix Interfaces with I in Separate Files
+
+When a named interface or type is justified (used in multiple locations per 7.10 exceptions), it must be placed in a dedicated file:
+
+- **Interfaces** (e.g., `AuthHandler`): prefixed with `I`, go in `{domain}.interface.ts`.
+- **Types** (e.g., `AuthResult`): no `I` prefix, go in `{domain}.type.ts`.
+
+This makes interface definitions discoverable and signals at a glance that a file contains type contracts, not implementation logic.
+
+```typescript
+// src/auth-version-handler.interface.ts
+export interface AuthHandler {
+  authenticate(url: URL, secret: string): Promise<AuthResult>;
+}
+```
+
+```typescript
+// src/auth-result.type.ts
+export type AuthResult =
+  | { ok: true }
+  | { ok: false; status: 401 | 403; message: string };
+```
+
+```typescript
+// src/auth.ts
+import type { AuthResult } from "./auth-result.type";
+import type { AuthHandler } from "./auth-version-handler.interface";
+
+class V1AuthHandler implements AuthHandler { ... }
+```
+
+### 7.12 Use Highly Descriptive Names
+
+Class and function names must be specific enough to identify their domain and purpose without requiring the reader to inspect imports or surrounding context. Names like `Handler`, `Service`, `Manager`, or generic abbreviations are ambiguous and should be avoided.
+
+```typescript
+// Good: domain + purpose are clear
+class V1AuthHandler implements AuthHandler { ... }
+function _computeAuthHmac(secret: string, message: string): Promise<Uint8Array> { ... }
+async function authenticateTileRequest(url: URL, secret: string): Promise<AuthResult> { ... }
+
+// Bad: too generic, requires context to understand
+class V1Handler implements IVersionHandler { ... }
+function _computeHmac(...) { ... }
+export async function authenticate(...) { ... }
+```
+
+### 7.13 Export Utils as Namespace Objects
+
+Utility modules (files named `*.utils.ts`) must export their functions through a single named namespace object with `as const`, rather than as individual named exports.
+
+This keeps imports clean and predictable — consumers always import the namespace object and access members through it.
+
+```typescript
+// Good: namespace object export
+function filterUndefined<T extends Record<string, unknown>>(
+  obj: T,
+): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
+
+export const ObjectUtils = {
+  filterUndefined,
+} as const;
+
+// Usage: import { ObjectUtils } from "./object.utils";
+//         ObjectUtils.filterUndefined(obj)
+```
+
+```typescript
+// Bad: individual named exports
+export function filterUndefined() {}
+```
+
+Exceptions:
+- A utils file that exports only types alongside functions may keep type exports separate (types are not functions and do not belong in the runtime namespace object).
+- Re-exports from `index.ts` or barrel files that forward a utils namespace are fine.
+
 ---
 
 ## 8. Cloudflare Worker Guidelines
@@ -549,7 +674,7 @@ Before declaring work complete, verify:
 - [ ] Tests were added or updated.
 - [ ] Relevant checks were run.
 - [ ] README was updated when needed.
-- [ ] `.env.example` was updated when needed.
+- [ ] `.dev.vars.example` was updated when needed.
 - [ ] `pnpm-lock.yaml` is updated when dependencies changed.
 - [ ] No dead code was left behind.
 - [ ] No secrets or sensitive data were introduced.

@@ -72,7 +72,10 @@ Then requests to http://localhost:8787/my-map/... will serve real tile data.
 | Variable         | Default                    | Description                          |
 |------------------|----------------------------|--------------------------------------|
 | `ALLOWED_ORIGINS`| `*`                        | Comma-separated CORS origins         |
+| `AUTH_SECRET`    | —                          | HMAC-SHA256 secret for signed URLs   |
 | `CACHE_CONTROL`  | `public, max-age=86400`    | Cache-Control header for responses   |
+
+When `AUTH_SECRET` is not set, authentication is disabled and all requests are allowed.
 
 ### R2 Buckets (`wrangler.jsonc`)
 
@@ -85,6 +88,99 @@ Then requests to http://localhost:8787/my-map/... will serve real tile data.
 ### Cloudflare Bindings
 
 The worker expects a single R2 bucket binding named `BUCKET`. The bucket name varies by environment (see above).
+
+## Authentication (Signed URLs)
+
+The worker supports optional HMAC-SHA256 signature-based authentication for tile and TileJSON requests. When `AUTH_SECRET` is set, all requests must include valid `v`, `sig`, and `exp` query parameters. When `AUTH_SECRET` is not set, authentication is disabled and all requests pass through.
+
+### How it works
+
+1. A backend service signs URLs using HMAC-SHA256 with the shared `AUTH_SECRET`.
+2. The signature covers a versioned message format that includes the params needed for validation.
+3. The frontend (map library) includes the signed URL params in tile requests.
+4. The worker verifies the signature and params before serving each request.
+
+### URL Format
+
+```
+GET /{name}/{z}/{x}/{y}.{ext}?v=1&sig={hex_signature}&exp={unix_timestamp}
+```
+
+| Param | Description |
+|-------|-------------|
+| `v`   | Signature version (currently `1`) |
+| `sig` | Hex-encoded HMAC-SHA256 signature |
+| `exp` | Unix timestamp when the URL expires |
+
+### Signing Algorithm
+
+The signed message is versioned and colon-delimited for future extensibility:
+
+```
+v1 (current): message = "v1:" + expiration
+v2 (future):  message = "v2:" + mapName + ":" + expiration
+```
+
+The `v` URL parameter tells the verifier which version to use, so only one HMAC computation is needed per request.
+
+#### Backend signing example (Node.js)
+
+```javascript
+const crypto = require("crypto");
+const secret = process.env.AUTH_SECRET;
+const exp = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+const message = `v1:${exp}`;
+const sig = crypto.createHmac("sha256", secret).update(message).digest("hex");
+const url = `https://your-worker.example.com/your-map/{z}/{x}/{y}.mvt?v=1&sig=${sig}&exp=${exp}`;
+```
+
+### Setting the Secret
+
+Generate a secret:
+
+```bash
+openssl rand -hex 32
+```
+
+Set it in production:
+
+```bash
+wrangler secret put AUTH_SECRET
+wrangler secret put AUTH_SECRET --env staging
+wrangler secret put AUTH_SECRET --env production
+```
+
+For local development, copy `.dev.vars.example` to `.dev.vars` and set `AUTH_SECRET` there.
+
+### Client Integration
+
+The frontend never has the secret. A backend service signs the URL and passes it to the frontend. The map library uses the full signed URL as the tile URL template.
+
+**JavaScript example (fetch from backend, then use in Leaflet):**
+
+```javascript
+// Fetch a signed URL from your backend
+const response = await fetch("/api/sign-tile-url");
+const { signedUrl } = await response.json();
+
+// Use in Leaflet
+const map = L.map('map').setView([-23.55, -46.63], 12);
+L.tileLayer(signedUrl, {
+  tileSize: 512,
+}).addTo(map);
+```
+
+### Testing with curl
+
+```bash
+# Compute a signature (adjust expiration as needed)
+SECRET="your-auth-secret"
+EXP=$(($(date +%s) + 3600))
+SIG=$(echo -n "v1:$EXP" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')
+
+# Fetch tile with signed URL
+curl "https://your-worker.example.com/your-map/12/1516/2021.mvt?v=1&sig=$SIG&exp=$EXP" -o tile.mvt
+```
 
 ## API
 
@@ -124,12 +220,22 @@ GET /{name}.json
 
 Returns a [TileJSON](https://github.com/mapbox/tilejson-spec) description of the tileset.
 
+### Authentication
+
+If `AUTH_SECRET` is set, all requests must include `?v=1&sig=...&exp=...` query parameters. See the [Authentication section](#authentication-signed-urls) for details.
+
 ### Example
 
-Request:
+Request (without auth):
 
 ```http
 GET /my-map/10/5/12.mvt
+```
+
+Request (with auth enabled):
+
+```http
+GET /my-map/10/5/12.mvt?v=1&sig=abc123def456...&exp=1718000000
 ```
 
 Response: binary protobuf tile data with `Content-Type: application/x-protobuf`.
@@ -172,6 +278,14 @@ Validates the Worker configuration without deploying.
 pnpm deploy                # Deploy to development
 pnpm deploy --env staging  # Deploy to staging
 pnpm deploy --env production  # Deploy to production
+```
+
+If you enabled authentication, set the secret in each environment:
+
+```bash
+wrangler secret put AUTH_SECRET                # Development
+wrangler secret put AUTH_SECRET --env staging  # Staging
+wrangler secret put AUTH_SECRET --env production  # Production
 ```
 
 ## Client Integration
@@ -337,11 +451,12 @@ curl https://your-worker.example.com/your-map.json
 - No secrets are hardcoded in source or configuration
 - Stack traces are never exposed to clients
 - The `BUCKET` binding restricts access to the configured R2 bucket
+- Optional HMAC-SHA256 signed URL authentication via `AUTH_SECRET` — set it in production to protect your tile endpoints
 
 ## Limitations
 
 - CORS preflight (`OPTIONS`) requests are not handled; tile requests are simple GET requests that do not trigger preflight
-- The Worker does not support signed URLs or authentication — access control is managed through Cloudflare's WAF, Access, or other edge security features
+- Optional HMAC-SHA256 signed URL authentication must be enabled by setting `AUTH_SECRET` — it is disabled by default
 - Cache is disabled in local development; production uses `caches.default` with the configured `Cache-Control` header
 
 ## License

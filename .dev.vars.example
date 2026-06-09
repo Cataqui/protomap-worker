@@ -1,0 +1,9 @@
+# Environment variables for local development
+# Copy this file to .dev.vars and fill in values
+
+# When unset, authentication is disabled (all requests are allowed).
+# Tip: Generate with `openssl rand -hex 32`
+AUTH_SECRET=
+
+# The following vars are set in wrangler.jsonc and don't need to be set here:
+# ALLOWED_ORIGINS, CACHE_CONTROL
