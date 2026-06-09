@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "protomap-worker",
+  "main": "src/index.ts",
+  "minify": true,
+  "compatibility_date": "2026-06-09",
+  "workers_dev": false,
+  "vars": {
+    "ALLOWED_ORIGINS": "*",
+    "CACHE_CONTROL": "public, max-age=86400"
+  },
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "cataqui-map-development"
+    }
+  ],
+  "env": {
+    "production": {
+      "name": "protomap-worker-production",
+      "r2_buckets": [
+        {
+          "binding": "BUCKET",
+          "bucket_name": "cataqui-map-production"
+        }
+      ]
+    },
+    "staging": {
+      "name": "protomap-worker-staging",
+      "r2_buckets": [
+        {
+          "binding": "BUCKET",
+          "bucket_name": "cataqui-map-staging"
+        }
+      ]
+    }
+  }
+}

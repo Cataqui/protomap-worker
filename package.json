@@ -1,0 +1,28 @@
+{
+  "name": "@cataqui/protomap-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "wrangler deploy --outdir dist --dry-run",
+    "lint": "biome check src/",
+    "format": "biome format --write src/",
+    "biome": "biome check --write src/",
+    "biome-check": "biome check src/"
+  },
+  "dependencies": {
+    "pmtiles": "^4.3.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@cloudflare/vitest-pool-workers": "^0.7.0",
+    "@cloudflare/workers-types": "^4.20250601.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.8",
+    "wrangler": "^4.59.1"
+  }
+}
