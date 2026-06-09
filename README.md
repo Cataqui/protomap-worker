@@ -38,11 +38,32 @@ wrangler r2 object put protomap-[ENV]/map.pmtiles --file ./path/to/map.pmtiles
 
 ## Local Development
 
+The worker serves at http://localhost:8787. Cache is not active in local development.
+
+### Option A: Local mode (no Cloudflare login needed)
+
 ```bash
 pnpm start
 ```
 
-The worker serves at http://localhost:8787. The cache is not active in local development.
+The R2 bucket is simulated in-memory and starts empty — no actual Cloudflare resources are touched.
+Use this for code changes and unit testing; tile requests will return 404 since there's no data.
+
+### Option B: Remote mode (requires login once)
+
+```bash
+wrangler login          # One-time setup
+pnpm start -- --remote  # Or: wrangler dev --remote
+```
+
+Connects to your real `protomap-development` R2 bucket on Cloudflare's edge.
+Upload your `.pmtiles` file first:
+
+```bash
+wrangler r2 object put protomap-development/my-map.pmtiles --file ./my-map.pmtiles
+```
+
+Then requests to http://localhost:8787/my-map/... will serve real tile data.
 
 ## Configuration
 
@@ -73,7 +94,9 @@ The worker expects a single R2 bucket binding named `BUCKET`. The bucket name va
 GET /{name}/{z}/{x}/{y}.{ext}
 ```
 
-- `name` — Map name (corresponds to the `.pmtiles` file name in R2)
+- `name` — Map identifier. The worker looks up a `.pmtiles` file with this name in the R2 bucket. For example, requesting `/brazil/12/1516/2021.mvt` will fetch `brazil.pmtiles` from the bucket.
+
+  You can customize how the name maps to the R2 key via the `PMTILES_PATH` environment variable. By default it's `{name}.pmtiles`, but you can set it to `folder/{name}/archive.pmtiles` or any template containing `{name}`.
 - `z` — Zoom level (`0` = single tile covering the whole world, `1` = 2×2 tiles, etc.)
 - `x` — Tile column (0 to `2^z - 1`, left to right)
 - `y` — Tile row (0 to `2^z - 1`, top to bottom)
