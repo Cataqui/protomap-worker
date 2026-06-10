@@ -26,6 +26,14 @@ jobs:
               - "pnpm-lock.yaml"
               - "tsconfig.json"
 
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".node-version"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
       - name: Set AUTH_SECRET on staging
         uses: cloudflare/wrangler-action@v4
         with:
@@ -91,6 +99,14 @@ jobs:
               - "package.json"
               - "pnpm-lock.yaml"
               - "tsconfig.json"
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".node-version"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
 
       - name: Set AUTH_SECRET on production
         uses: cloudflare/wrangler-action@v4
