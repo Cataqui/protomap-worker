@@ -17,13 +17,13 @@ Deploy a production-ready **Protomaps** tile worker in under 5 minutes. No serve
 
 ```bash
 # 1. Deploy the worker
-npx wrangler deploy
+npx wrangler deploy --env production
 
 # 2. Upload your map data
-npx wrangler r2 object put protomap-development/my-map.pmtiles --file ./map.pmtiles
+npx wrangler r2 object put protomap-production/my-map.pmtiles --file ./map.pmtiles
 
 # 3. Open in your app
-https://protomap-worker.example.com/my-map/{z}/{x}/{y}.mvt
+https://protomap-worker-production.example.com/my-map/{z}/{x}/{y}.mvt
 ```
 
 ---
@@ -64,15 +64,19 @@ https://protomap-worker.example.com/my-map/{z}/{x}/{y}.mvt
 
 ## ⚡ Quick Start
 
-Get a tile server running in 3 steps:
+Choose your deployment path:
 
-### Prerequisites
+### 🖥️ CLI
+
+Run commands locally to deploy.
+
+#### Prerequisites
 
 - [Node.js](https://nodejs.org/) ≥ 18
 - [pnpm](https://pnpm.io/installation)
 - A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier works)
 
-### 1. Clone & install
+#### 1. Clone & install
 
 ```bash
 git clone https://github.com/Cataqui/protomap-worker.git
@@ -80,29 +84,225 @@ cd protomap-worker
 pnpm install
 ```
 
-### 2. Create an R2 bucket
+#### 2. Create R2 buckets
+
+Create the buckets for each environment you plan to use:
 
 ```bash
 npx wrangler r2 bucket create protomap-development
+npx wrangler r2 bucket create protomap-staging
+npx wrangler r2 bucket create protomap-production
 ```
 
-### 3. Deploy & upload a map
+> If wrangler prompts **"Would you like to add this bucket to your wrangler.jsonc?"**, answer **n** (no) — the buckets are already pre-configured there.
+
+Or create all at once:
 
 ```bash
-# Deploy the worker
+pnpm r2:bucket:create:all
+```
+
+#### 3. Deploy the worker
+
+`pnpm deploy` deploys to **development** by default (`protomap-worker-development`). Pass `--env` to target a different environment:
+
+```bash
+# Development (default)
 pnpm deploy
 
-# Upload a .pmtiles file
+# Staging
+pnpm deploy --env staging
+
+# Production
+pnpm deploy --env production
+```
+
+#### 4. Set environment secrets (optional)
+
+Secrets like `AUTH_SECRET` must be set per environment before they take effect:
+
+```bash
+openssl rand -hex 32                      # Generate a secret
+npx wrangler secret put AUTH_SECRET        # Development
+npx wrangler secret put AUTH_SECRET --env staging
+npx wrangler secret put AUTH_SECRET --env production
+```
+
+Non-sensitive variables (`ALLOWED_ORIGINS`, `CACHE_CONTROL`) are pre-configured in `wrangler.jsonc`.
+
+#### 5. Upload a map
+
+```bash
+# Development
 npx wrangler r2 object put protomap-development/my-map.pmtiles --file ./path/to/your-map.pmtiles
+# Staging
+npx wrangler r2 object put protomap-staging/my-map.pmtiles --file ./path/to/your-map.pmtiles
+# Production
+npx wrangler r2 object put protomap-production/my-map.pmtiles --file ./path/to/your-map.pmtiles
 ```
 
-**Your map is live.** Point your map library at:
+**Your map is live.** Point your map library at the worker URL for your environment:
 
 ```
-https://protomap-worker.example.com/my-map/{z}/{x}/{y}.mvt
+https://protomap-worker-development.example.com/my-map/{z}/{x}/{y}.mvt
 ```
 
 > 💡 **Don't have a `.pmtiles` file?** Download a sample from [Protomaps Downloads](https://protomaps.com/downloads) or build one with [Planetiler](https://github.com/onthegomap/planetiler).
+
+---
+
+### 🤖 GitHub Actions
+
+Fork, configure in your browser, run the workflow — your map is live.
+
+#### Prerequisites
+
+- A [GitHub account](https://github.com)
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier works — R2 includes 5GB free)
+
+---
+
+#### 1. Fork the repository
+
+Go to [Cataqui/protomap-worker](https://github.com/Cataqui/protomap-worker) and click **Fork** in the top-right corner. This creates a copy under your GitHub account.
+
+---
+
+#### 2. Create R2 buckets in Cloudflare
+
+Cloudflare R2 is where your map files are stored. You need one bucket per environment.
+
+1. Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com)
+2. In the left sidebar, go to **R2** → **Overview**
+3. Click **Create bucket** and create `protomap-staging`
+4. Click **Create bucket** again and create `protomap-production`
+
+The bucket names must match exactly — the worker looks for these names at deploy time.
+
+---
+
+#### 3. Add a Cloudflare API token
+
+The workflow needs an API token to deploy the worker and manage secrets.
+
+1. In the Cloudflare Dashboard, go to **My Profile** (top right) → **API Tokens**
+2. Click **Create Token**
+3. Select the **Edit Cloudflare Workers** template
+4. Click **Continue to summary**, then **Create Token**
+5. **Copy the token now** — you won't see it again
+
+Now go to your fork on GitHub:
+
+1. Open **Settings** → **Secrets and variables** → **Actions**
+2. Click **New repository secret**
+3. Name: `CLOUDFLARE_API_TOKEN`
+4. Value: paste the token you copied
+5. Click **Add secret**
+
+---
+
+#### 4. (Optional) Set up authentication (AUTH_SECRET)
+
+If you want signed URL protection so tiles are not publicly accessible, set up `AUTH_SECRET` per environment.
+
+First, generate a secret:
+
+```bash
+openssl rand -hex 32
+```
+
+Or use an online generator — any 64-character hex string works.
+
+Now create GitHub environments and add the secret:
+
+1. In your fork, go to **Settings** → **Environments**
+2. Click **Create environment**, name it `staging`, click **Configure environment**
+3. Under **Environment secrets**, click **Add secret**, name it `AUTH_SECRET`, paste your generated secret
+4. Repeat for `production` — create the `production` environment and add `AUTH_SECRET`
+
+> **No authentication?** Skip this step entirely. The worker will serve tiles publicly.
+
+---
+
+#### 5. Get a .pmtiles file
+
+You need a map file to serve. If you don't have one:
+
+- **Download a sample:** Visit [Protomaps Downloads](https://protomaps.com/downloads) and download a small region (e.g., a city or country extract)
+- **Or create one:** Use [Planetiler](https://github.com/onthegomap/planetiler) to build from OpenStreetMap data
+
+You'll upload this file in the next step.
+
+---
+
+#### 6. Upload the map to the staging bucket
+
+Upload your `.pmtiles` file to the **staging bucket** — never upload directly to production:
+
+```bash
+npx wrangler r2 object put protomap-staging/my-map.pmtiles --file ./map.pmtiles
+```
+
+For large files (1 GB+), use rclone or the AWS CLI instead — see [Large file uploads](#-deployment) for details.
+
+If you don't have the CLI available, upload via the Cloudflare dashboard:
+
+1. Go to **R2** → `protomap-staging`
+2. Click **Upload files**
+3. Select your `.pmtiles` file and upload
+
+> 💡 **Always put data in staging first.** When you deploy to production, the workflow will copy it there automatically.
+
+---
+
+#### 7. Run the workflow
+
+1. In your fork, go to the **Actions** tab
+2. Click **Deploy** in the left sidebar
+3. Click the **Run workflow** button (dropdown on the right)
+4. Choose **staging** or **production** from the dropdown
+5. Click **Run workflow**
+
+What happens for each environment:
+
+| Environment | Worker deployed | Data |
+|-------------|----------------|------|
+| **staging** | `protomap-worker-staging` | Serves from `protomap-staging` bucket directly |
+| **production** | `protomap-worker-production` | Syncs `protomap-staging` → `protomap-production`, then serves from production bucket |
+
+The workflow takes about 1–2 minutes. You can watch the live logs in the **Actions** tab.
+
+---
+
+#### 8. Configure routing (one-time)
+
+After the workflow completes, the worker exists on Cloudflare but still needs a route.
+
+1. Go to [Cloudflare Dashboard → Workers & Pages](https://dash.cloudflare.com/workers)
+2. Click your worker (`protomap-worker-staging` or `protomap-worker-production`)
+3. Go to the **Triggers** tab
+4. Choose one:
+
+   - **Enable workers.dev** — Toggle on `workers.dev` route to get a URL like `https://protomap-worker-staging.<your-subdomain>.workers.dev`
+   - **Add a custom domain** — If you own a domain on Cloudflare, add a route like `tiles.yourdomain.com/*`
+
+---
+
+#### 9. Test your map
+
+Open this URL in your browser:
+
+```
+https://protomap-worker-staging.<your-subdomain>.workers.dev/my-map/0/0/0.mvt
+```
+
+Replace `<your-subdomain>` with your Cloudflare subdomain and `my-map` with your map name (the filename without `.pmtiles`).
+
+> **Can't find your subdomain?** In the Cloudflare Dashboard, go to **Workers & Pages**, click your worker — the URL is shown at the top of the page.
+
+If you set up `AUTH_SECRET`, add the auth query parameters — see the [Authentication](#-authentication-signed-urls) section for how to sign URLs.
+
+**Your map server is live.** Point any map library (Leaflet, MapLibre, etc.) at your worker URL.
 
 ---
 
@@ -518,6 +718,7 @@ openssl rand -hex 32
 npx wrangler secret put AUTH_SECRET --env production
 
 # 3. Create the production bucket
+# Note: If wrangler prompts **"Would you like to add this bucket to your wrangler.jsonc?"**, answer **n** (no) — the buckets are already pre-configured there.
 npx wrangler r2 bucket create protomap-production
 
 # 4. Upload your map
@@ -542,13 +743,17 @@ This repository includes two GitHub Actions workflows for automated quality chec
 | Workflow | File | Runs on | What it does |
 |----------|------|---------|--------------|
 | **Code Quality** | `.github/workflows/code-quality.yml` | Push/PR to `development`, `staging`, `main` | `typecheck` → `lint` → `test` → `build` — then starts the worker locally with `wrangler dev` and verifies it responds |
-| **Deploy** | `.github/workflows/deploy.yml` | Push to `staging`, `main` | Deploys Worker code + syncs R2 buckets (staging → production) |
+| **Deploy** | `.github/workflows/deploy.yml` | Push to `staging`, `main` + `workflow_dispatch` | Deploys Worker code, optionally sets `AUTH_SECRET`, and syncs R2 buckets (staging → production) |
 
 ### Branch strategy
 
-The workflows assume a three-branch pipeline:
+The workflows assume a three-branch pipeline, with optional manual dispatch:
 
 ```
+┌─ workflow_dispatch ─────────────────────────────────────────┐
+│  Choose environment (staging/production), click Run — done  │
+└──────────────────────────────────────────────────────────────┘
+
 development  →  staging  →  main
      │              │           │
      │              ├── Deploy Worker to staging (protomap-worker-staging)
@@ -563,6 +768,7 @@ development  →  staging  →  main
 - **development** — Active development. Code Quality checks run on every push/PR.
 - **staging** — Pre-production. Code Quality + Worker deploy to staging environment.
 - **main** — Production. Code Quality + bucket sync + Worker deploy to production environment.
+- **Manual dispatch** — Triggered from the Actions tab. Select an environment to deploy without pushing code. `AUTH_SECRET` is optional — skip it for a public worker, or set it in the environment secrets for signed URL protection.
 
 ### What deploys
 
@@ -586,8 +792,8 @@ Set these in your repository at **Settings → Secrets and variables → Actions
 | Secret | Scope | Used in | Description |
 |--------|-------|---------|-------------|
 | `CLOUDFLARE_API_TOKEN` | Repository | Both workflows | Cloudflare API token with Workers + R2 permissions. Create in [Cloudflare Dashboard → My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens). Use the "Edit Cloudflare Workers" template, or create a custom token with permissions: `Workers Scripts:Edit`, `Workers Routes:Edit`, `Account Scope`. |
-| `AUTH_SECRET` | `staging` environment | Deploy workflow (staging-deploy job) | HMAC secret for staging. Generate with `openssl rand -base64 32`. Can differ from production. |
-| `AUTH_SECRET` | `production` environment | Deploy workflow (production-deploy job) | HMAC secret for production. Generate with `openssl rand -base64 32`. |
+| `AUTH_SECRET` | `staging` environment | Deploy workflow (staging-deploy job) | HMAC secret for staging (optional — skip for a public worker). Generate with `openssl rand -hex 32`. Can differ from production. |
+| `AUTH_SECRET` | `production` environment | Deploy workflow (production-deploy job) | HMAC secret for production (optional — skip for a public worker). Generate with `openssl rand -hex 32`. |
 | `R2_ACCESS_KEY_ID` | `production` environment | Deploy workflow (bucket-sync job) | R2 API access key ID for cross-bucket sync. Create in Cloudflare Dashboard → R2 → Manage R2 API Tokens. Needs **Read** on `protomap-staging` and **Read & Write** on `protomap-production`. |
 | `R2_SECRET_ACCESS_KEY` | `production` environment | Deploy workflow (bucket-sync job) | R2 API secret key, created alongside the access key ID above. |
 | `CLOUDFLARE_ACCOUNT_ID` | `production` environment | Deploy workflow (bucket-sync job) | Your Cloudflare account ID. Find it in the Cloudflare Dashboard → Workers & Pages → right sidebar, or from your R2 endpoint URL: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. |
@@ -600,12 +806,12 @@ Create two environments in **Settings → Environments**:
 
 | Environment | Secrets to add | Notes |
 |-------------|---------------|-------|
-| `staging` | `AUTH_SECRET` | No protection rules needed |
-| `production` | `AUTH_SECRET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `CLOUDFLARE_ACCOUNT_ID` | Optionally add required reviewers for safety |
+| `staging` | `AUTH_SECRET` (optional) | No protection rules needed |
+| `production` | `AUTH_SECRET` (optional), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `CLOUDFLARE_ACCOUNT_ID` | Optionally add required reviewers for safety |
 
 ### Required R2 buckets
 
-The workflows reference these bucket names. Create them before your first deploy:
+The workflows reference these bucket names. Create them manually before your first deploy:
 
 ```bash
 npx wrangler r2 bucket create protomap-development
@@ -613,7 +819,30 @@ npx wrangler r2 bucket create protomap-staging
 npx wrangler r2 bucket create protomap-production
 ```
 
+> If wrangler prompts **"Would you like to add this bucket to your wrangler.jsonc?"**, answer **n** (no) — the buckets are already pre-configured there.
+
+Or using the pnpm scripts:
+
+```bash
+pnpm r2:bucket:create:all
+```
+
 ### Setting up a fork from scratch
+
+#### Quick path (workflow_dispatch)
+
+The simplest way to get started:
+
+1. **Fork** the repository to your GitHub account
+2. **Add `CLOUDFLARE_API_TOKEN`** as a repository secret
+3. **(Optional)** Create the `staging` environment with `AUTH_SECRET`
+4. **Go to Actions → Deploy → Run workflow** — done
+
+No local setup, no branches, no bucket creation. See the [GitHub Actions Quick Start](#-github-actions) for details.
+
+#### Full pipeline (push-based)
+
+For a full three-branch pipeline with automatic deploy on push:
 
 1. **Fork and clone**
    ```bash
@@ -658,6 +887,19 @@ Everything else works fine — deploy manually with `pnpm deploy`.
 
 **Want Deploy on your own branch names?** Edit the `branches:` lists in the workflow files. For example, replace `[development, staging, main]` with `[dev, prod]`.
 
+### Production data flow
+
+For security, production data is never written to directly. The flow is always:
+
+1. **Upload your `.pmtiles` files to the staging bucket** (`protomap-staging`)
+2. **Run the Deploy workflow** (push to `main` or trigger manually)
+3. **The workflow syncs staging → production** via server-side copy
+
+This ensures:
+- **No direct production access** — Only the CI/CD pipeline can write to the production bucket
+- **Audit trail** — Every production change goes through GitHub, leaving a traceable record
+- **Rollback** — Re-upload the previous file to staging and re-run the workflow
+
 ### How the bucket sync works
 
 On push to `main`, the Deploy workflow runs an `rclone copy` from the staging R2 bucket to the production R2 bucket:
@@ -678,15 +920,38 @@ If you'd rather promote data manually (e.g., upload directly to both buckets), r
 Both staging and production deploys use [cloudflare/wrangler-action](https://github.com/cloudflare/wrangler-action). The action:
 
 1. Reads `CLOUDFLARE_API_TOKEN` for authentication
-2. Sets `AUTH_SECRET` via the Wrangler `secrets` API (no command-line exposure of secret values)
-3. Runs `wrangler deploy --env <environment>` only when Worker-relevant files have changed (path filter)
+2. Sets `AUTH_SECRET` via the Wrangler `secrets` API (only if the secret is configured)
+3. Runs `wrangler deploy --env <environment>` — on push, only when Worker-relevant files have changed; on `workflow_dispatch`, always deploys
 4. Deploys to the Worker name defined in `wrangler.jsonc`:
    - Staging: `protomap-worker-staging`
    - Production: `protomap-worker-production`
 
 ### Manual Workflow triggers
 
-The Deploy workflow runs automatically on push. If you want to redeploy without pushing, you can also trigger it from the **Actions** tab in GitHub.
+The Deploy workflow supports `workflow_dispatch` for manual triggers from the **Actions** tab:
+
+```yaml
+workflow_dispatch:
+  inputs:
+    environment:
+      description: "Environment to deploy"
+      required: true
+      default: "staging"
+      type: choice
+      options:
+        - staging
+        - production
+```
+
+To trigger manually:
+
+1. Go to the **Actions** tab in your repository
+2. Select **Deploy** from the left sidebar
+3. Click **Run workflow**
+4. Pick **staging** or **production**
+5. Click **Run workflow**
+
+The workflow sets `AUTH_SECRET` only if configured, and deploys the worker — no code changes needed.
 
 ### Troubleshooting
 
@@ -742,6 +1007,10 @@ The worker serves at **http://localhost:8787**.
 | `pnpm lint` | Check for lint issues with Biome |
 | `pnpm format` | Format source files with Biome |
 | `pnpm build` | Validate Worker config (dry-run deploy) |
+| `pnpm r2:bucket:create:dev` | Create the development R2 bucket |
+| `pnpm r2:bucket:create:staging` | Create the staging R2 bucket |
+| `pnpm r2:bucket:create:prod` | Create the production R2 bucket |
+| `pnpm r2:bucket:create:all` | Create all R2 buckets |
 
 ---
 

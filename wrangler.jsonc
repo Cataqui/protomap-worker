@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "protomap-worker",
+  "name": "protomap-worker-development",
   "main": "src/index.ts",
   "minify": true,
   "compatibility_date": "2026-06-09",
