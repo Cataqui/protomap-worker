@@ -147,7 +147,7 @@ npx wrangler r2 object put protomap-production/my-map.pmtiles --file ./path/to/y
 https://protomap-worker-development.example.com/my-map/{z}/{x}/{y}.mvt
 ```
 
-> 💡 **Don't have a `.pmtiles` file?** Download a sample from [Protomaps Downloads](https://protomaps.com/downloads) or build one with [Planetiler](https://github.com/onthegomap/planetiler).
+> 💡 **Don't have a `.pmtiles` file?** Download a sample from [Protomaps Downloads](https://maps.protomaps.com/builds/) or build one with [Planetiler](https://github.com/onthegomap/planetiler).
 
 ---
 
