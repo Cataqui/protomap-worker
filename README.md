@@ -194,33 +194,46 @@ The workflow needs an API token to deploy the worker and manage secrets.
 Now go to your fork on GitHub:
 
 1. Open **Settings** → **Secrets and variables** → **Actions**
-2. Click **New repository secret**
-3. Name: `CLOUDFLARE_API_TOKEN`
-4. Value: paste the token you copied
-5. Click **Add secret**
+2. Click **New repository secret** and add:
+
+| Secret | Description |
+|--------|-------------|
+| `CLOUDFLARE_API_TOKEN` | API token from the step above. |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID. Find it at Dashboard → **Workers & Pages** → look in the right sidebar, or from your R2 endpoint: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. |
 
 ---
 
-#### 4. (Optional) Set up authentication (AUTH_SECRET)
+#### 4. Set up GitHub environments and secrets
 
-If you want signed URL protection so tiles are not publicly accessible, set up `AUTH_SECRET` per environment.
+Your workflow needs GitHub environments with secrets for each target. These give the workflow permission to deploy and sync data.
 
-First, generate a secret:
+##### Staging environment
 
-```bash
-openssl rand -hex 32
-```
-
-Or use an online generator — any 64-character hex string works.
-
-Now create GitHub environments and add the secret:
+Create the `staging` environment and add secrets:
 
 1. In your fork, go to **Settings** → **Environments**
 2. Click **Create environment**, name it `staging`, click **Configure environment**
-3. Under **Environment secrets**, click **Add secret**, name it `AUTH_SECRET`, paste your generated secret
-4. Repeat for `production` — create the `production` environment and add `AUTH_SECRET`
+3. Under **Environment secrets**, click **Add secret** and add:
 
-> **No authentication?** Skip this step entirely. The worker will serve tiles publicly.
+| Secret | Required? | Description |
+|--------|-----------|-------------|
+| `AUTH_SECRET` | Optional | HMAC secret for signed URL protection. Generate with `openssl rand -hex 32`. Skip for public tiles. |
+
+##### Production environment
+
+Create the `production` environment and add secrets:
+
+1. In your fork, go to **Settings** → **Environments**
+2. Click **Create environment**, name it `production`, click **Configure environment**
+3. Under **Environment secrets**, click **Add secret** and add:
+
+| Secret | Required? | Description |
+|--------|-----------|-------------|
+| `AUTH_SECRET` | Optional | HMAC secret for signed URL protection. Can differ from staging. |
+| `R2_ACCESS_KEY_ID` | Required | R2 API access key for cross-bucket sync (staging → production). Create at Cloudflare Dashboard → **R2** → **Overview** → **Manage R2 API Tokens** → **Create API token**. Needs **Read** on `protomap-staging` and **Read & Write** on `protomap-production`. |
+| `R2_SECRET_ACCESS_KEY` | Required | Created alongside the access key ID above. |
+
+> **Only deploying to staging?** You only need the staging environment with optional `AUTH_SECRET`. Skip production setup until you're ready.
 
 ---
 
@@ -228,7 +241,7 @@ Now create GitHub environments and add the secret:
 
 You need a map file to serve. If you don't have one:
 
-- **Download a sample:** Visit [Protomaps Downloads](https://protomaps.com/downloads) and download a small region (e.g., a city or country extract)
+- **Download a sample:** Visit [Protomaps Downloads](https://maps.protomaps.com/builds) and download a small region (e.g., a city or country extract)
 - **Or create one:** Use [Planetiler](https://github.com/onthegomap/planetiler) to build from OpenStreetMap data
 
 You'll upload this file in the next step.
@@ -243,7 +256,7 @@ Upload your `.pmtiles` file to the **staging bucket** — never upload directly 
 npx wrangler r2 object put protomap-staging/my-map.pmtiles --file ./map.pmtiles
 ```
 
-For large files (1 GB+), use rclone or the AWS CLI instead — see [Large file uploads](#-deployment) for details.
+For large files (1 GB+), use rclone or the AWS CLI instead — see [Large file uploads](#large-file-uploads) for details.
 
 If you don't have the CLI available, upload via the Cloudflare dashboard:
 
@@ -732,6 +745,52 @@ pnpm deploy --env production
 
 In your Cloudflare dashboard, add a route or custom domain to your worker for a clean URL like `tiles.yourdomain.com`.
 
+### Large file uploads
+
+For `.pmtiles` files over 1 GB, `npx wrangler r2 object put` lacks progress reporting and cannot resume interrupted uploads. Use `rclone` or the AWS CLI instead — both support multipart uploads, progress bars, and resume.
+
+#### Option 1: rclone
+
+[Install rclone](https://rclone.org/install/) and configure a Cloudflare R2 remote:
+
+```bash
+rclone config create r2 s3 \
+  provider=Cloudflare \
+  access_key_id="<R2_ACCESS_KEY_ID>" \
+  secret_access_key="<R2_SECRET_ACCESS_KEY>" \
+  endpoint="https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
+  force_path_style=true \
+  no_check_bucket=true
+```
+
+Then upload a file with progress:
+
+```bash
+# Upload to staging
+rclone copy ./my-map.pmtiles r2:protomap-staging/ --progress
+
+# Upload to production (not recommended — use the bucket sync instead)
+rclone copy ./my-map.pmtiles r2:protomap-production/ --progress
+```
+
+To get your R2 credentials: Cloudflare Dashboard → **R2** → **Overview** → **Manage R2 API Tokens** → **Create API token**.
+
+To find your `ACCOUNT_ID`: Cloudflare Dashboard → **Workers & Pages** → look in the right sidebar.
+
+#### Option 2: AWS CLI
+
+[Install the AWS CLI](https://aws.amazon.com/cli/) and configure it for Cloudflare R2:
+
+```bash
+aws configure set aws_access_key_id "<R2_ACCESS_KEY_ID>"
+aws configure set aws_secret_access_key "<R2_SECRET_ACCESS_KEY>"
+
+aws s3 cp ./my-map.pmtiles s3://protomap-staging/ \
+  --endpoint-url "https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
+```
+
+AWS CLI shows a progress bar by default.
+
 ---
 
 ## 🤖 GitHub Actions (CI/CD)
@@ -792,13 +851,13 @@ Set these in your repository at **Settings → Secrets and variables → Actions
 | Secret | Scope | Used in | Description |
 |--------|-------|---------|-------------|
 | `CLOUDFLARE_API_TOKEN` | Repository | Both workflows | Cloudflare API token with Workers + R2 permissions. Create in [Cloudflare Dashboard → My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens). Use the "Edit Cloudflare Workers" template, or create a custom token with permissions: `Workers Scripts:Edit`, `Workers Routes:Edit`, `Account Scope`. |
+| `CLOUDFLARE_ACCOUNT_ID` | Repository | Deploy workflow (bucket-sync job) | Your Cloudflare account ID. Find it in the Cloudflare Dashboard → Workers & Pages → right sidebar, or from your R2 endpoint URL: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. |
 | `AUTH_SECRET` | `staging` environment | Deploy workflow (staging-deploy job) | HMAC secret for staging (optional — skip for a public worker). Generate with `openssl rand -hex 32`. Can differ from production. |
 | `AUTH_SECRET` | `production` environment | Deploy workflow (production-deploy job) | HMAC secret for production (optional — skip for a public worker). Generate with `openssl rand -hex 32`. |
 | `R2_ACCESS_KEY_ID` | `production` environment | Deploy workflow (bucket-sync job) | R2 API access key ID for cross-bucket sync. Create in Cloudflare Dashboard → R2 → Manage R2 API Tokens. Needs **Read** on `protomap-staging` and **Read & Write** on `protomap-production`. |
 | `R2_SECRET_ACCESS_KEY` | `production` environment | Deploy workflow (bucket-sync job) | R2 API secret key, created alongside the access key ID above. |
-| `CLOUDFLARE_ACCOUNT_ID` | `production` environment | Deploy workflow (bucket-sync job) | Your Cloudflare account ID. Find it in the Cloudflare Dashboard → Workers & Pages → right sidebar, or from your R2 endpoint URL: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. |
 
-> **Why are some secrets environment-scoped?** Staging and production should use different `AUTH_SECRET` values. R2 keys and account ID are only needed for the bucket-sync job which runs on `main` (production). The `CLOUDFLARE_API_TOKEN` is shared across all workflows and lives at the repository level.
+> **Why are some secrets environment-scoped?** Staging and production should use different `AUTH_SECRET` values. R2 keys are only needed for the bucket-sync job which runs on `main` (production). `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are shared across all workflows and live at the repository level.
 
 ### GitHub environments
 
@@ -807,7 +866,7 @@ Create two environments in **Settings → Environments**:
 | Environment | Secrets to add | Notes |
 |-------------|---------------|-------|
 | `staging` | `AUTH_SECRET` (optional) | No protection rules needed |
-| `production` | `AUTH_SECRET` (optional), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `CLOUDFLARE_ACCOUNT_ID` | Optionally add required reviewers for safety |
+| `production` | `AUTH_SECRET` (optional), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Optionally add required reviewers for safety |
 
 ### Required R2 buckets
 

@@ -46,8 +46,19 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Check if AUTH_SECRET is set
+        id: auth-check
+        env:
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+        run: |
+          if [ -n "$AUTH_SECRET" ]; then
+            echo "has_secret=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secret=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set AUTH_SECRET on staging
-        if: ${{ secrets.AUTH_SECRET != '' }}
+        if: steps.auth-check.outputs.has_secret == 'true'
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -114,8 +125,19 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Check if AUTH_SECRET is set
+        id: auth-check
+        env:
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+        run: |
+          if [ -n "$AUTH_SECRET" ]; then
+            echo "has_secret=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secret=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set AUTH_SECRET on production
-        if: ${{ secrets.AUTH_SECRET != '' }}
+        if: steps.auth-check.outputs.has_secret == 'true'
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
