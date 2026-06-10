@@ -60,26 +60,17 @@ jobs:
       - name: Install rclone
         run: curl -fsSL https://rclone.org/install.sh | sudo bash
 
-      - name: Configure rclone remotes
-        run: |
-          rclone config create staging s3 \
-            provider=Cloudflare \
-            access_key_id="${{ secrets.R2_ACCESS_KEY_ID }}" \
-            secret_access_key="${{ secrets.R2_SECRET_ACCESS_KEY }}" \
-            endpoint="https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            force_path_style=true \
-            no_check_bucket=true
+      - name: Configure rclone remote
+        run: rclone config create r2 s3 \
+          provider=Cloudflare \
+          access_key_id="${{ secrets.R2_ACCESS_KEY_ID }}" \
+          secret_access_key="${{ secrets.R2_SECRET_ACCESS_KEY }}" \
+          endpoint="https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+          force_path_style=true \
+          no_check_bucket=true
 
-          rclone config create production s3 \
-            provider=Cloudflare \
-            access_key_id="${{ secrets.R2_ACCESS_KEY_ID }}" \
-            secret_access_key="${{ secrets.R2_SECRET_ACCESS_KEY }}" \
-            endpoint="https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            force_path_style=true \
-            no_check_bucket=true
-
-      - name: Sync staging bucket to production
-        run: rclone copy staging:protomap-staging production:protomap-production --verbose --transfers 4 --checkers 8
+      - name: Sync staging bucket to production (server-side copy)
+        run: rclone copy r2:protomap-staging r2:protomap-production --verbose --transfers 4 --checkers 8
 
   production-deploy:
     needs: bucket-sync

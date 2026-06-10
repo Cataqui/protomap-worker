@@ -663,13 +663,13 @@ Everything else works fine — deploy manually with `pnpm deploy`.
 On push to `main`, the Deploy workflow runs an `rclone copy` from the staging R2 bucket to the production R2 bucket:
 
 ```bash
-rclone copy staging:protomap-staging production:protomap-production --verbose --transfers 4 --checkers 8
+rclone copy r2:protomap-staging r2:protomap-production --verbose --transfers 4 --checkers 8
 ```
 
-- `rclone` is installed fresh in the CI runner (not pre-installed on GitHub runners)
-- It skips files that already exist in production (same name, same size) — only new or changed files are transferred
-- Data flows **through the GitHub Actions runner** (not server-side), so large files take time proportional to their size through the runner's network
-- The sync runs on **every push to `main`**, even if only Worker code changed. The scan is fast when nothing new exists (< 1 minute), but transfers of large `.pmtiles` files can take 5–30 minutes depending on file size and runner bandwidth
+- Both buckets are configured under a **single rclone remote**, enabling rclone to use R2's `CopyObject` API (server-side copy). Data stays within Cloudflare's network — no bytes flow through the GitHub Actions runner.
+- It skips files that already exist in production (same name, same size) — only new or changed files are transferred.
+- Since the copy happens server-side, large `.pmtiles` files (1–30 GB) copy in **seconds** rather than minutes.
+- The sync runs on **every push to `main`**, even if only Worker code changed. The scan is fast when nothing new exists (< 1 minute).
 
 If you'd rather promote data manually (e.g., upload directly to both buckets), remove or disable the `bucket-sync` job.
 
@@ -698,7 +698,7 @@ The Deploy workflow runs automatically on push. If you want to redeploy without 
 | `Deploy` fails at "Set AUTH_SECRET" | Missing `AUTH_SECRET` in the environment secrets. Check Settings → Environments. |
 | `Deploy` fails at "Deploy Worker" | Missing or invalid `CLOUDFLARE_API_TOKEN`. Verify the token has Workers permissions. |
 | `bucket-sync` fails at "Configure rclone remotes" | Missing `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, or `CLOUDFLARE_ACCOUNT_ID`. Check production environment secrets. |
-| `bucket-sync` times out | Large `.pmtiles` files take time through GitHub runner bandwidth. Consider promoting data manually for files > 5 GB. |
+| `bucket-sync` times out | Extremely large files (>5 GB) may still encounter edge-case timeouts. Server-side copy is used by default, which is usually instant. |
 | Workflow doesn't run on push | Check that the branch name matches the `branches:` list in the workflow file. |
 
 ---
