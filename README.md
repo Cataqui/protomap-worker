@@ -51,6 +51,7 @@ https://protomap-worker.example.com/my-map/{z}/{x}/{y}.mvt
 - [Authentication (Signed URLs)](#-authentication-signed-urls)
 - [Client Integration](#-client-integration)
 - [Deployment](#-deployment)
+- [GitHub Actions (CI/CD)](#-github-actions-cicd)
 - [Local Development](#-local-development)
 - [Scripts](#-scripts)
 - [Architecture](#-architecture)
@@ -529,6 +530,176 @@ pnpm deploy --env production
 ### Custom domain
 
 In your Cloudflare dashboard, add a route or custom domain to your worker for a clean URL like `tiles.yourdomain.com`.
+
+---
+
+## 🤖 GitHub Actions (CI/CD)
+
+This repository includes two GitHub Actions workflows for automated quality checks and deployment. You don't need to use them — everything works fine with manual `pnpm` commands. But if you want automated testing and deployment on every push, here's how to set them up.
+
+### Workflows overview
+
+| Workflow | File | Runs on | What it does |
+|----------|------|---------|--------------|
+| **Code Quality** | `.github/workflows/code-quality.yml` | Push/PR to `development`, `staging`, `main` | `typecheck` → `lint` → `test` → `build` — then starts the worker locally with `wrangler dev` and verifies it responds |
+| **Deploy** | `.github/workflows/deploy.yml` | Push to `staging`, `main` | Deploys Worker code + syncs R2 buckets (staging → production) |
+
+### Branch strategy
+
+The workflows assume a three-branch pipeline:
+
+```
+development  →  staging  →  main
+     │              │           │
+     │              ├── Deploy Worker to staging (protomap-worker-staging)
+     │              │
+     │              └── Push to main:
+     │                   ├── Sync R2 buckets (protomap-staging → protomap-production)
+     │                   └── Deploy Worker to production (protomap-worker-production)
+     │
+     └── Code Quality runs on every branch
+```
+
+- **development** — Active development. Code Quality checks run on every push/PR.
+- **staging** — Pre-production. Code Quality + Worker deploy to staging environment.
+- **main** — Production. Code Quality + bucket sync + Worker deploy to production environment.
+
+### What deploys
+
+The **Deploy** workflow uses [dorny/paths-filter](https://github.com/dorny/paths-filter) to only deploy the Worker when relevant files change:
+
+```yaml
+worker:
+  - "src/**"
+  - "wrangler.jsonc"
+  - "package.json"
+  - "pnpm-lock.yaml"
+  - "tsconfig.json"
+```
+
+If only documentation or unrelated files change, the Worker deploy step is skipped. The bucket sync step (on `main`) always runs when there's a push to `main`, regardless of which files changed.
+
+### Required GitHub secrets
+
+Set these in your repository at **Settings → Secrets and variables → Actions**:
+
+| Secret | Scope | Used in | Description |
+|--------|-------|---------|-------------|
+| `CLOUDFLARE_API_TOKEN` | Repository | Both workflows | Cloudflare API token with Workers + R2 permissions. Create in [Cloudflare Dashboard → My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens). Use the "Edit Cloudflare Workers" template, or create a custom token with permissions: `Workers Scripts:Edit`, `Workers Routes:Edit`, `Account Scope`. |
+| `AUTH_SECRET` | `staging` environment | Deploy workflow (staging-deploy job) | HMAC secret for staging. Generate with `openssl rand -base64 32`. Can differ from production. |
+| `AUTH_SECRET` | `production` environment | Deploy workflow (production-deploy job) | HMAC secret for production. Generate with `openssl rand -base64 32`. |
+| `R2_ACCESS_KEY_ID` | `production` environment | Deploy workflow (bucket-sync job) | R2 API access key ID for cross-bucket sync. Create in Cloudflare Dashboard → R2 → Manage R2 API Tokens. Needs **Read** on `protomap-staging` and **Read & Write** on `protomap-production`. |
+| `R2_SECRET_ACCESS_KEY` | `production` environment | Deploy workflow (bucket-sync job) | R2 API secret key, created alongside the access key ID above. |
+| `CLOUDFLARE_ACCOUNT_ID` | `production` environment | Deploy workflow (bucket-sync job) | Your Cloudflare account ID. Find it in the Cloudflare Dashboard → Workers & Pages → right sidebar, or from your R2 endpoint URL: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. |
+
+> **Why are some secrets environment-scoped?** Staging and production should use different `AUTH_SECRET` values. R2 keys and account ID are only needed for the bucket-sync job which runs on `main` (production). The `CLOUDFLARE_API_TOKEN` is shared across all workflows and lives at the repository level.
+
+### GitHub environments
+
+Create two environments in **Settings → Environments**:
+
+| Environment | Secrets to add | Notes |
+|-------------|---------------|-------|
+| `staging` | `AUTH_SECRET` | No protection rules needed |
+| `production` | `AUTH_SECRET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `CLOUDFLARE_ACCOUNT_ID` | Optionally add required reviewers for safety |
+
+### Required R2 buckets
+
+The workflows reference these bucket names. Create them before your first deploy:
+
+```bash
+npx wrangler r2 bucket create protomap-development
+npx wrangler r2 bucket create protomap-staging
+npx wrangler r2 bucket create protomap-production
+```
+
+### Setting up a fork from scratch
+
+1. **Fork and clone**
+   ```bash
+   git clone https://github.com/your-username/protomap-worker.git
+   cd protomap-worker
+   pnpm install
+   ```
+
+2. **Create the branches**
+   ```bash
+   git checkout -b development
+   git push -u origin development
+   git checkout -b staging
+   git push -u origin staging
+   git checkout main
+   git push -u origin main
+   ```
+
+3. **Create R2 buckets** (see above)
+
+4. **Set GitHub secrets** (see table above)
+
+5. **Create GitHub environments** (see above)
+
+6. **Push code** — the first push to each branch triggers the workflows. Monitor them at **Actions** tab.
+
+### Skipping or disabling the workflows
+
+**Don't want CI/CD at all?** Simply delete the workflow files:
+
+```bash
+rm -rf .github/workflows/
+```
+
+Everything else works fine — deploy manually with `pnpm deploy`.
+
+**Want some workflows but not others?** Delete the file you don't want, or modify the `branches:` filter in the workflow file.
+
+**Want the Deploy workflow but without the bucket sync?** Remove the `bucket-sync` job from `.github/workflows/deploy.yml`.
+
+**Want only Code Quality (no deploy)?** Delete `.github/workflows/deploy.yml` and keep `.github/workflows/code-quality.yml`.
+
+**Want Deploy on your own branch names?** Edit the `branches:` lists in the workflow files. For example, replace `[development, staging, main]` with `[dev, prod]`.
+
+### How the bucket sync works
+
+On push to `main`, the Deploy workflow runs an `rclone copy` from the staging R2 bucket to the production R2 bucket:
+
+```bash
+rclone copy staging:protomap-staging production:protomap-production --verbose --transfers 4 --checkers 8
+```
+
+- `rclone` is installed fresh in the CI runner (not pre-installed on GitHub runners)
+- It skips files that already exist in production (same name, same size) — only new or changed files are transferred
+- Data flows **through the GitHub Actions runner** (not server-side), so large files take time proportional to their size through the runner's network
+- The sync runs on **every push to `main`**, even if only Worker code changed. The scan is fast when nothing new exists (< 1 minute), but transfers of large `.pmtiles` files can take 5–30 minutes depending on file size and runner bandwidth
+
+If you'd rather promote data manually (e.g., upload directly to both buckets), remove or disable the `bucket-sync` job.
+
+### How the Worker deploy works
+
+Both staging and production deploys use [cloudflare/wrangler-action](https://github.com/cloudflare/wrangler-action). The action:
+
+1. Reads `CLOUDFLARE_API_TOKEN` for authentication
+2. Sets `AUTH_SECRET` via the Wrangler `secrets` API (no command-line exposure of secret values)
+3. Runs `wrangler deploy --env <environment>` only when Worker-relevant files have changed (path filter)
+4. Deploys to the Worker name defined in `wrangler.jsonc`:
+   - Staging: `protomap-worker-staging`
+   - Production: `protomap-worker-production`
+
+### Manual Workflow triggers
+
+The Deploy workflow runs automatically on push. If you want to redeploy without pushing, you can also trigger it from the **Actions** tab in GitHub.
+
+### Troubleshooting
+
+| Symptom | Likely cause |
+|---------|-------------|
+| `Code Quality` fails at `typecheck` | TypeScript error in code. Run `pnpm typecheck` locally to diagnose. |
+| `Code Quality` fails at `lint` | Biome lint error. Run `pnpm lint` locally. |
+| `Code Quality` fails at `test` | Test failure. Run `pnpm test` locally. |
+| `Deploy` fails at "Set AUTH_SECRET" | Missing `AUTH_SECRET` in the environment secrets. Check Settings → Environments. |
+| `Deploy` fails at "Deploy Worker" | Missing or invalid `CLOUDFLARE_API_TOKEN`. Verify the token has Workers permissions. |
+| `bucket-sync` fails at "Configure rclone remotes" | Missing `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, or `CLOUDFLARE_ACCOUNT_ID`. Check production environment secrets. |
+| `bucket-sync` times out | Large `.pmtiles` files take time through GitHub runner bandwidth. Consider promoting data manually for files > 5 GB. |
+| Workflow doesn't run on push | Check that the branch name matches the `branches:` list in the workflow file. |
 
 ---
 

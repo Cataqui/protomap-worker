@@ -1,0 +1,59 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [development, staging, main]
+  pull_request:
+    branches: [development, staging, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".node-version"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+      - name: Start wrangler dev and verify
+        run: |
+          pnpm wrangler dev --port 8787 &
+          PID=$!
+
+          for i in $(seq 0 30); do
+            if curl -s -o /dev/null http://localhost:8787 2>/dev/null; then
+              echo "Worker started successfully"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "Worker failed to start within 30s"
+              kill $PID 2>/dev/null || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8787)
+          echo "Root route returned: $HTTP_CODE"
+
+          kill $PID
+          wait $PID 2>/dev/null || true
+          echo "Worker shut down cleanly"
