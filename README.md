@@ -141,11 +141,13 @@ npx wrangler r2 object put protomap-staging/my-map.pmtiles --file ./path/to/your
 npx wrangler r2 object put protomap-production/my-map.pmtiles --file ./path/to/your-map.pmtiles
 ```
 
-**Your map is live.** Point your map library at the worker URL for your environment:
+**Your map is live.** The worker is automatically available at a `*.workers.dev` URL:
 
 ```
-https://protomap-worker-development.example.com/my-map/{z}/{x}/{y}.mvt
+https://protomap-worker-<environment>.<your-subdomain>.workers.dev/my-map/{z}/{x}/{y}.mvt
 ```
+
+For a custom domain, see [Custom domain](#custom-domain) in the Deployment section.
 
 > 💡 **Don't have a `.pmtiles` file?** Download a sample from [Protomaps Downloads](https://maps.protomaps.com/builds/) or build one with [Planetiler](https://github.com/onthegomap/planetiler).
 
@@ -287,26 +289,23 @@ The workflow takes about 1–2 minutes. You can watch the live logs in the **Act
 
 ---
 
-#### 8. Configure routing (one-time)
+#### 8. (Optional) Add a custom domain
 
-After the workflow completes, the worker exists on Cloudflare but still needs a route.
+The worker is automatically available at a `*.workers.dev` URL — no dashboard configuration needed. If you want a custom domain instead:
 
 1. Go to [Cloudflare Dashboard → Workers & Pages](https://dash.cloudflare.com/workers)
 2. Click your worker (`protomap-worker-staging` or `protomap-worker-production`)
-3. Go to the **Triggers** tab
-4. Choose one:
-
-   - **Enable workers.dev** — Toggle on `workers.dev` route to get a URL like `https://protomap-worker-staging.<your-subdomain>.workers.dev`
-   - **Add a custom domain** — If you own a domain on Cloudflare, add a route like `tiles.yourdomain.com/*`
+3. Go to **Triggers** → **Add custom domain**
+4. Enter a domain like `tiles.yourdomain.com`
 
 ---
 
 #### 9. Test your map
 
-Open this URL in your browser:
+The worker is live at:
 
 ```
-https://protomap-worker-staging.<your-subdomain>.workers.dev/my-map/0/0/0.mvt
+https://protomap-worker-<environment>.<your-subdomain>.workers.dev/my-map/0/0/0.mvt
 ```
 
 Replace `<your-subdomain>` with your Cloudflare subdomain and `my-map` with your map name (the filename without `.pmtiles`).

@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "minify": true,
   "compatibility_date": "2026-06-09",
-  "workers_dev": false,
+  "workers_dev": true,
   "vars": {
     "ALLOWED_ORIGINS": "*",
     "CACHE_CONTROL": "public, max-age=86400"
