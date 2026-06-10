@@ -81,7 +81,7 @@ async function _createCacheableResponse(
   headers: Headers,
   status: number,
 ): Promise<Response> {
-  headers.set("Cache-Control", cacheControl || "public, max-age=86400");
+  headers.set("Cache-Control", cacheControl || "public, max-age=604800, stale-while-revalidate=86400");
 
   const cacheable = new Response(body, { headers, status });
   ctx.waitUntil(cache.put(cacheKey, cacheable));

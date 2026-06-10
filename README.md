@@ -359,7 +359,7 @@ Set in `wrangler.jsonc` (non-secret) or as Cloudflare secrets:
 |---|---|---|---|
 | `AUTH_SECRET` | — | ✅ | HMAC-SHA256 secret for signed URL authentication. When unset, auth is disabled. |
 | `ALLOWED_ORIGINS` | `*` | ❌ | Comma-separated list of allowed CORS origins. Set to specific domains in production. |
-| `CACHE_CONTROL` | `public, max-age=86400` | ❌ | `Cache-Control` header value for tile responses. |
+| `CACHE_CONTROL` | `public, max-age=604800, stale-while-revalidate=86400` | ❌ | `Cache-Control` header value for tile responses. |
 | `PMTILES_PATH` | `{name}.pmtiles` | ❌ | Template for R2 key resolution. Supports `{name}` placeholder. Example: `folder/{name}/archive.pmtiles` |
 | `PUBLIC_HOSTNAME` | — | ❌ | Public hostname used in TileJSON responses. Auto-detected from request when unset. |
 
@@ -432,7 +432,7 @@ GET /brazil/12/1516/2021.mvt
 ```http
 HTTP/1.1 200 OK
 Content-Type: application/x-protobuf
-Cache-Control: public, max-age=86400
+Cache-Control: public, max-age=604800, stale-while-revalidate=86400
 Access-Control-Allow-Origin: *
 ```
 

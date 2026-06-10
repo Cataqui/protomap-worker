@@ -7,7 +7,7 @@
   "workers_dev": true,
   "vars": {
     "ALLOWED_ORIGINS": "*",
-    "CACHE_CONTROL": "public, max-age=86400"
+    "CACHE_CONTROL": "public, max-age=604800, stale-while-revalidate=86400"
   },
   "r2_buckets": [
     {
