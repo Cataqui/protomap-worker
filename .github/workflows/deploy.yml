@@ -1,0 +1,118 @@
+name: Deploy
+
+on:
+  push:
+    branches: [staging, main]
+
+permissions:
+  contents: read
+
+jobs:
+  staging-deploy:
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            worker:
+              - "src/**"
+              - "wrangler.jsonc"
+              - "package.json"
+              - "pnpm-lock.yaml"
+              - "tsconfig.json"
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".node-version"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set AUTH_SECRET on staging
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          environment: staging
+          secrets: |
+            AUTH_SECRET
+        env:
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+
+      - name: Deploy Worker to staging
+        if: steps.changes.outputs.worker == 'true'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          environment: staging
+          command: deploy --env staging
+
+  bucket-sync:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Install rclone
+        run: curl -fsSL https://rclone.org/install.sh | sudo bash
+
+      - name: Configure rclone remote
+        run: rclone config create r2 s3 \
+          provider=Cloudflare \
+          access_key_id="${{ secrets.R2_ACCESS_KEY_ID }}" \
+          secret_access_key="${{ secrets.R2_SECRET_ACCESS_KEY }}" \
+          endpoint="https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+          force_path_style=true \
+          no_check_bucket=true
+
+      - name: Sync staging bucket to production (server-side copy)
+        run: rclone copy r2:protomap-staging r2:protomap-production --verbose --transfers 4 --checkers 8
+
+  production-deploy:
+    needs: bucket-sync
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            worker:
+              - "src/**"
+              - "wrangler.jsonc"
+              - "package.json"
+              - "pnpm-lock.yaml"
+              - "tsconfig.json"
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".node-version"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set AUTH_SECRET on production
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          environment: production
+          secrets: |
+            AUTH_SECRET
+        env:
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+
+      - name: Deploy Worker to production
+        if: steps.changes.outputs.worker == 'true'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          environment: production
+          command: deploy --env production

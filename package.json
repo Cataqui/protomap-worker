@@ -2,6 +2,7 @@
   "name": "@cataqui/protomap-worker",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@11.4.0",
   "scripts": {
     "start": "wrangler dev",
     "deploy": "wrangler deploy",
