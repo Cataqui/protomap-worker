@@ -14,7 +14,11 @@
     "format": "biome format --write src/",
     "biome": "biome check --write src/",
     "biome-check": "biome check src/",
-    "prepare": "husky"
+    "prepare": "husky",
+    "r2:bucket:create:dev": "wrangler r2 bucket create protomap-development",
+    "r2:bucket:create:staging": "wrangler r2 bucket create protomap-staging",
+    "r2:bucket:create:prod": "wrangler r2 bucket create protomap-production",
+    "r2:bucket:create:all": "pnpm r2:bucket:create:dev && pnpm r2:bucket:create:staging && pnpm r2:bucket:create:prod"
   },
   "dependencies": {
     "pmtiles": "^4.3.0"
