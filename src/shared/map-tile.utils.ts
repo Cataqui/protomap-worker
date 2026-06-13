@@ -1,10 +1,3 @@
-function pmtilesPath(name: string, setting?: string): string {
-  if (setting) {
-    return setting.replaceAll("{name}", name);
-  }
-  return `${name}.pmtiles`;
-}
-
 const TILE = /^\/(?<NAME>[0-9a-zA-Z/!\-_.*'()]+)\/(?<Z>\d+)\/(?<X>\d+)\/(?<Y>\d+).(?<EXT>[a-z]+)$/;
 const TILESET = /^\/(?<NAME>[0-9a-zA-Z/!\-_.*'()]+).json$/;
 
@@ -32,6 +25,5 @@ function tilePath(path: string): {
 }
 
 export const MapTileUtils = {
-  pmtilesPath,
   tilePath,
 } as const;

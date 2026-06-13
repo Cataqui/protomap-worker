@@ -8,7 +8,5 @@ export type Env = {
   // biome-ignore lint/style/useNamingConvention: config name
   CACHE_CONTROL?: string;
   // biome-ignore lint/style/useNamingConvention: config name
-  PMTILES_PATH?: string;
-  // biome-ignore lint/style/useNamingConvention: config name
   PUBLIC_HOSTNAME?: string;
 };

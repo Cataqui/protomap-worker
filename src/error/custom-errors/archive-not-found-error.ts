@@ -6,7 +6,7 @@ export class ArchiveNotFoundError extends WorkerError {
     super({
       code: WorkerErrorCodes.ARCHIVE_NOT_FOUND,
       status: 404,
-      message: `Archive '${archiveName}' not found in R2 bucket. Verify the archive name and PMTILES_PATH configuration.`,
+      message: `Archive '${archiveName}' not found in R2 bucket. Verify the region name and ensure the file exists under the 'regions/' prefix.`,
       details: { archiveName },
     });
   }

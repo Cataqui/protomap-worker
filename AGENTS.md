@@ -4,9 +4,9 @@
 
 You are operating inside the **Protomap Worker** repository.
 
-This repository provides a production-ready **Cloudflare Worker** for serving and accessing [Protomaps](https://protomaps.com/) `.pmtiles` files, based on the default worker patterns from the Protomaps / PMTiles ecosystem, but adapted for a cleaner Cloudflare-native deployment experience.
+This repository provides a production-ready **Cloudflare Worker** for serving self-hosted vector maps, including [Protomaps](https://protomaps.com/) `.pmtiles` tile data and font glyphs (`.pbf`), based on the default worker patterns from the Protomaps / PMTiles ecosystem, but adapted for a cleaner Cloudflare-native deployment experience.
 
-The goal is to make it extremely easy to deploy a secure, reliable map-serving worker and start using `.pmtiles` files with minimal setup.
+The goal is to be the go-to self-hosted map server — making it extremely easy to deploy a secure, reliable map-serving worker and start serving tiles, fonts, and metadata with minimal setup.
 
 This project optimizes for:
 
@@ -29,15 +29,16 @@ This is a **Cloudflare Worker** repository.
 
 It is not a frontend application, mobile app, backend monolith, or general-purpose map-rendering framework. Avoid adding abstractions that make the worker harder to audit, deploy, or operate.
 
-The worker’s primary responsibility is to expose `.pmtiles` map data safely and efficiently through Cloudflare’s runtime.
+The worker’s primary responsibility is to expose map tiles and font glyphs through Cloudflare’s runtime safely and efficiently.
 
 Expected concerns include:
 
 - Cloudflare Worker request handling
 - PMTiles file access
 - Tile serving
+- Font glyph serving
 - TileJSON / metadata serving when supported
-- HTTP caching
+- HTTP caching (configurable for tiles, hardcoded immutable for glyphs)
 - CORS behavior
 - Security headers
 - Environment bindings
@@ -107,7 +108,7 @@ When adding or changing a binding:
 
 ### Keep the Worker Small
 
-This repository should remain focused on serving `.pmtiles` through Cloudflare Workers.
+This repository should remain focused on serving `.pmtiles` and font glyphs through Cloudflare Workers.
 
 Do not introduce:
 
@@ -123,13 +124,14 @@ Prefer simple functions, explicit types, and direct Cloudflare Worker APIs.
 
 ### Separate Core Logic from Runtime Glue
 
-Request parsing, validation, PMTiles access, response generation, and cache behavior should be testable without requiring a live Cloudflare deployment.
+Request parsing, validation, PMTiles access, glyph serving, response generation, and cache behavior should be testable without requiring a live Cloudflare deployment.
 
 Prefer this structure when practical:
 
 - Worker entrypoint: minimal `fetch` handler
-- Request router: maps requests to actions
+- Request router: maps requests to actions (`/regions/*`, `/glyphs/*`)
 - PMTiles service: reads map data
+- Glyph service: reads font files from R2
 - Response helpers: headers, errors, caching
 - Validation helpers: path, query, method, range handling
 - Tests: unit and integration coverage for each behavior
@@ -143,8 +145,9 @@ Treat the following as public API boundaries:
 - response status codes
 - response headers
 - CORS behavior
-- cache semantics
+- cache semantics (configurable for tiles, hardcoded immutable for glyphs)
 - TileJSON response shape
+- glyph URL structure and response format
 - error response shape
 - environment variable names
 - Cloudflare binding names
@@ -168,6 +171,7 @@ Validate:
 - query parameters
 - map names
 - tile coordinates
+- glyph paths
 - file keys
 - range headers
 - origin headers
@@ -228,6 +232,7 @@ At minimum, test:
 - request routing
 - invalid methods
 - invalid paths
+- invalid glyph paths (traversal, null bytes, non-.pbf)
 - invalid tile coordinates
 - missing maps
 - malformed range headers
@@ -237,6 +242,7 @@ At minimum, test:
 - error responses
 - PMTiles metadata access
 - tile response behavior
+- glyph response behavior (200, 404, 400)
 - environment binding failures
 - edge cases around empty or missing configuration
 
@@ -618,6 +624,16 @@ When working with PMTiles:
 
 Any change to map-serving behavior must include tests using realistic fixtures or mocks.
 
+### Glyph Serving Guidelines
+
+Font glyphs are served directly from R2 with minimal processing:
+
+- Preserve correct `application/x-protobuf` content type.
+- Hardcode immutable cache headers — font files never change.
+- Validate glyph paths for security (no `..`, null bytes, non-`.pbf` extensions).
+- Return `404 Not Found` for missing glyphs (not `204` or `500`).
+- Do not transform or re-encode glyph data.
+
 ---
 
 ## 10. Documentation Standards
@@ -694,7 +710,7 @@ Do not turn this repository into:
 - a multi-cloud abstraction layer
 - a general proxy server
 
-The project should remain a focused, secure, easy-to-deploy Cloudflare Worker for serving Protomaps `.pmtiles`.
+The project should remain a focused, secure, easy-to-deploy Cloudflare Worker for serving Protomaps `.pmtiles` and font glyphs.
 
 ---
 

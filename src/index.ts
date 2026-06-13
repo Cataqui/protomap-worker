@@ -1,9 +1,10 @@
 import { PMTiles } from "pmtiles";
 import { AUTH_VERSIONS } from "./auth/auth-versions";
 import { AuthParamMissingError, AuthVersionMissingError, AuthVersionUnknownError, MethodNotAllowedError, RouteNotFoundError, WorkerError } from "./error";
+import { serveGlyphRequest } from "./glyphs/glyph-serving";
 import { nativeDecompress, PMTILES_CACHE } from "./pmtiles/pmtiles-cache";
 import { servePmtilesRequest } from "./pmtiles/tile-serving";
-import { MapTileUtils } from "./shared/map-tile.utils";
+import { parseRoute } from "./router/router";
 import { R2Source } from "./storage/r2-source";
 import type { Env } from "./types/env.type";
 
@@ -15,11 +16,11 @@ export default {
       if (request.method.toUpperCase() !== "GET") throw new MethodNotAllowedError(request.method);
 
       const url = new URL(request.url);
-      const { ok, name, tile, ext } = MapTileUtils.tilePath(url.pathname);
+      const route = parseRoute(url.pathname);
 
-      if (!ok) throw new RouteNotFoundError(url.pathname);
+      if (!route.ok) throw new RouteNotFoundError(url.pathname);
 
-      if (env.AUTH_SECRET) await _authenticateTileRequest(url, env.AUTH_SECRET);
+      if (env.AUTH_SECRET) await _authenticateRequest(url, env.AUTH_SECRET);
 
       const cacheUrl = new URL(request.url);
       cacheUrl.searchParams.delete("v");
@@ -30,14 +31,27 @@ export default {
 
       if (cached) return _getCachedResponse(cached, allowedOrigin);
 
-      const source = new R2Source(env, name);
-      const pmtiles = new PMTiles(source, PMTILES_CACHE, nativeDecompress);
+      if (route.type === "regions") {
+        const source = new R2Source(env.BUCKET, `regions/${route.name}.pmtiles`);
+        const pmtiles = new PMTiles(source, PMTILES_CACHE, nativeDecompress);
+        const baseUrl = `https://${env.PUBLIC_HOSTNAME || url.hostname}/regions`;
 
-      const result = await servePmtilesRequest(pmtiles, name, tile, ext, env.PUBLIC_HOSTNAME || url.hostname);
-      const headers = new Headers();
-      if (result.contentType) headers.set("Content-Type", result.contentType);
+        const result = await servePmtilesRequest(pmtiles, route.name, route.tile, route.ext, baseUrl);
+        const headers = new Headers();
+        if (result.contentType) headers.set("Content-Type", result.contentType);
 
-      return _createCacheableResponse(ctx, cache, cacheUrl.href, allowedOrigin, env.CACHE_CONTROL, result.body, headers, result.status);
+        return _createCacheableResponse(ctx, cache, cacheUrl.href, allowedOrigin, env.CACHE_CONTROL, result.body, headers, result.status);
+      }
+
+      if (route.type === "glyphs") {
+        const result = await serveGlyphRequest(env.BUCKET, route.key);
+        const headers = new Headers();
+        headers.set("Content-Type", result.contentType);
+
+        return _createCacheableResponse(ctx, cache, cacheUrl.href, allowedOrigin, "public, max-age=31536000, immutable", result.body ?? undefined, headers, result.status);
+      }
+
+      throw new RouteNotFoundError(url.pathname);
     } catch (e) {
       if (e instanceof WorkerError) {
         const response = e.toResponse();
@@ -51,7 +65,7 @@ export default {
   },
 };
 
-async function _authenticateTileRequest(url: URL, secret: string): Promise<void> {
+async function _authenticateRequest(url: URL, secret: string): Promise<void> {
   const v = url.searchParams.get("v");
 
   if (!v) throw new AuthVersionMissingError(Object.keys(AUTH_VERSIONS));

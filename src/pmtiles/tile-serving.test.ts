@@ -51,7 +51,7 @@ describe("servePmtilesRequest", () => {
   describe("TileJSON requests (no tile coordinates)", () => {
     it("returns 200 with application/json for a tile request without coordinates", async () => {
       const pmtiles = createMockPmtiles({ tileJson: { name: "test", format: "pbf" } });
-      const result = await servePmtilesRequest(pmtiles, "testmap", undefined, "json", "example.com");
+      const result = await servePmtilesRequest(pmtiles, "testmap", undefined, "json", "https://example.com/regions");
 
       expect(result.status).toBe(200);
       expect(result.contentType).toBe("application/json");
@@ -65,7 +65,7 @@ describe("servePmtilesRequest", () => {
   describe("zoom validation", () => {
     it("throws TILE_ZOOM_OUT_OF_RANGE when zoom is below minZoom", async () => {
       const pmtiles = createMockPmtiles({ minZoom: 5, maxZoom: 10 });
-      await expect(servePmtilesRequest(pmtiles, "test", [0, 0, 0] as [number, number, number], "mvt", "example.com")).rejects.toMatchObject({
+      await expect(servePmtilesRequest(pmtiles, "test", [0, 0, 0] as [number, number, number], "mvt", "https://example.com/regions")).rejects.toMatchObject({
         code: WorkerErrorCodes.TILE_ZOOM_OUT_OF_RANGE,
         status: 400,
         details: { requested: 0, min: 5, max: 10 },
@@ -74,7 +74,7 @@ describe("servePmtilesRequest", () => {
 
     it("throws TILE_ZOOM_OUT_OF_RANGE when zoom is above maxZoom", async () => {
       const pmtiles = createMockPmtiles({ minZoom: 0, maxZoom: 5 });
-      await expect(servePmtilesRequest(pmtiles, "test", [10, 0, 0] as [number, number, number], "mvt", "example.com")).rejects.toMatchObject({
+      await expect(servePmtilesRequest(pmtiles, "test", [10, 0, 0] as [number, number, number], "mvt", "https://example.com/regions")).rejects.toMatchObject({
         code: WorkerErrorCodes.TILE_ZOOM_OUT_OF_RANGE,
         status: 400,
       });
@@ -84,7 +84,7 @@ describe("servePmtilesRequest", () => {
   describe("tile type validation", () => {
     it("throws TILE_TYPE_MISMATCH when tile extension does not match archive type", async () => {
       const pmtiles = createMockPmtiles({ tileType: 2 as TileType, minZoom: 0, maxZoom: 10 });
-      await expect(servePmtilesRequest(pmtiles, "test", [0, 0, 0] as [number, number, number], "mvt", "example.com")).rejects.toMatchObject({
+      await expect(servePmtilesRequest(pmtiles, "test", [0, 0, 0] as [number, number, number], "mvt", "https://example.com/regions")).rejects.toMatchObject({
         code: WorkerErrorCodes.TILE_TYPE_MISMATCH,
         status: 400,
       });
@@ -92,7 +92,7 @@ describe("servePmtilesRequest", () => {
 
     it("passes validation when tile extension matches archive type", async () => {
       const pmtiles = createMockPmtiles({ tileType: 1 as TileType, minZoom: 0, maxZoom: 10, tileData: new ArrayBuffer(4) });
-      const result = await servePmtilesRequest(pmtiles, "test", [0, 0, 0] as [number, number, number], "mvt", "example.com");
+      const result = await servePmtilesRequest(pmtiles, "test", [0, 0, 0] as [number, number, number], "mvt", "https://example.com/regions");
 
       expect(result.status).toBe(200);
     });
@@ -102,7 +102,7 @@ describe("servePmtilesRequest", () => {
     it("returns 200 with tile data and correct content type for Mvt", async () => {
       const data = new ArrayBuffer(16);
       const pmtiles = createMockPmtiles({ tileType: 1 as TileType, minZoom: 0, maxZoom: 10, tileData: data });
-      const result = await servePmtilesRequest(pmtiles, "test", [1, 2, 3] as [number, number, number], "mvt", "example.com");
+      const result = await servePmtilesRequest(pmtiles, "test", [1, 2, 3] as [number, number, number], "mvt", "https://example.com/regions");
 
       expect(result.status).toBe(200);
       expect(result.body).toBe(data);
@@ -112,7 +112,7 @@ describe("servePmtilesRequest", () => {
     it("returns 200 with correct content type for Png", async () => {
       const data = new ArrayBuffer(16);
       const pmtiles = createMockPmtiles({ tileType: 2 as TileType, minZoom: 0, maxZoom: 10, tileData: data });
-      const result = await servePmtilesRequest(pmtiles, "test", [1, 2, 3] as [number, number, number], "png", "example.com");
+      const result = await servePmtilesRequest(pmtiles, "test", [1, 2, 3] as [number, number, number], "png", "https://example.com/regions");
 
       expect(result.status).toBe(200);
       expect(result.contentType).toBe("image/png");
@@ -121,7 +121,7 @@ describe("servePmtilesRequest", () => {
     it("returns 200 with correct content type for Jpeg", async () => {
       const data = new ArrayBuffer(16);
       const pmtiles = createMockPmtiles({ tileType: 3 as TileType, minZoom: 0, maxZoom: 10, tileData: data });
-      const result = await servePmtilesRequest(pmtiles, "test", [1, 2, 3] as [number, number, number], "jpg", "example.com");
+      const result = await servePmtilesRequest(pmtiles, "test", [1, 2, 3] as [number, number, number], "jpg", "https://example.com/regions");
 
       expect(result.status).toBe(200);
       expect(result.contentType).toBe("image/jpeg");
@@ -130,7 +130,7 @@ describe("servePmtilesRequest", () => {
     it("returns 200 with correct content type for Webp", async () => {
       const data = new ArrayBuffer(16);
       const pmtiles = createMockPmtiles({ tileType: 4 as TileType, minZoom: 0, maxZoom: 10, tileData: data });
-      const result = await servePmtilesRequest(pmtiles, "test", [1, 2, 3] as [number, number, number], "webp", "example.com");
+      const result = await servePmtilesRequest(pmtiles, "test", [1, 2, 3] as [number, number, number], "webp", "https://example.com/regions");
 
       expect(result.status).toBe(200);
       expect(result.contentType).toBe("image/webp");
@@ -140,7 +140,7 @@ describe("servePmtilesRequest", () => {
   describe("empty tiles", () => {
     it("returns 204 with content type when tile data is empty", async () => {
       const pmtiles = createMockPmtiles({ tileType: 1 as TileType, minZoom: 0, maxZoom: 10, tileData: undefined });
-      const result = await servePmtilesRequest(pmtiles, "test", [1, 2, 3] as [number, number, number], "mvt", "example.com");
+      const result = await servePmtilesRequest(pmtiles, "test", [1, 2, 3] as [number, number, number], "mvt", "https://example.com/regions");
 
       expect(result.status).toBe(204);
       expect(result.body).toBeUndefined();

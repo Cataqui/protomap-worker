@@ -7,7 +7,7 @@ export async function servePmtilesRequest(
   name: string,
   tile: [number, number, number] | undefined,
   ext: string,
-  publicHostname: string,
+  baseUrl: string,
 ): Promise<{
   body?: ArrayBuffer | string;
   status: number;
@@ -16,7 +16,7 @@ export async function servePmtilesRequest(
   const pHeader = await pmtiles.getHeader();
 
   if (!tile) {
-    const t = await pmtiles.getTileJson(`https://${publicHostname}/${name}`);
+    const t = await pmtiles.getTileJson(`${baseUrl}/${name}`);
     return { body: JSON.stringify(t), status: 200, contentType: "application/json" };
   }
 

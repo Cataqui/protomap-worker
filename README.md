@@ -1,7 +1,7 @@
 <div align="center">
   <br/>
   <h1>🗺️ Protomap Worker</h1>
-  <p><strong>Self-hosted Protomaps tile server on Cloudflare Workers, as easy as Mapbox, but yours.</strong></p>
+  <p><strong>Self-hosted map server on Cloudflare Workers — tiles, fonts, and metadata. As easy as Mapbox, but yours.</strong></p>
   <p>
     <a href="#-quick-start"><img src="https://img.shields.io/badge/Quick_Start-30_seconds-73DC8C?style=flat" alt="Quick Start"></a>
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat" alt="License"></a>
@@ -13,17 +13,18 @@
   <br/>
 </div>
 
-Deploy a production-ready **Protomaps** tile worker in under 5 minutes. No servers to manage, no CDN config, no complex infrastructure. Upload your `.pmtiles` file, deploy the worker, and get a map on screen, it's that simple.
+Deploy a production-ready **Protomaps** map server in under 5 minutes. No servers to manage, no CDN config, no complex infrastructure. Upload your `.pmtiles` files and font glyphs, deploy the worker, and get a map on screen — it's that simple.
 
 ```bash
 # 1. Deploy the worker
 npx wrangler deploy --env production
 
-# 2. Upload your map data
-npx wrangler r2 object put protomap-production/my-map.pmtiles --file ./map.pmtiles
+# 2. Upload your map data and fonts
+npx wrangler r2 object put protomap-production/regions/brazil.pmtiles --file ./brazil.pmtiles
+npx wrangler r2 object put "protomap-production/glyphs/Inter Regular/0-255.pbf" --file ./fonts/inter-regular.pbf
 
 # 3. Open in your app
-https://protomap-worker-production.example.com/my-map/{z}/{x}/{y}.mvt
+https://protomap-worker-production.example.com/regions/brazil/{z}/{x}/{y}.mvt
 ```
 
 ---
@@ -32,6 +33,7 @@ https://protomap-worker-production.example.com/my-map/{z}/{x}/{y}.mvt
 
 - **⚡ Edge-native:** Built for Cloudflare Workers, deployed globally in seconds
 - **🗂️ PMTiles:** Serves vector and raster tiles directly from `.pmtiles` archives
+- **🔤 Font glyphs:** Serves `.pbf` font files for map text rendering via `/glyphs/`
 - **🔐 Optional auth:** HMAC-SHA256 signed URL protection when you need it
 - **🚀 Production-ready:** Caching, CORS, input validation, and structured errors
 - **📦 Zero infra:** No servers, no Kubernetes, no CDN configuration
@@ -130,21 +132,30 @@ npx wrangler secret put AUTH_SECRET --env production
 
 Non-sensitive variables (`ALLOWED_ORIGINS`, `CACHE_CONTROL`) are pre-configured in `wrangler.jsonc`.
 
-#### 5. Upload a map
+#### 5. Upload map data and fonts
 
+**Map tiles (.pmtiles):**
 ```bash
 # Development
-npx wrangler r2 object put protomap-development/my-map.pmtiles --file ./path/to/your-map.pmtiles
+npx wrangler r2 object put protomap-development/regions/brazil.pmtiles --file ./path/to/brazil.pmtiles
 # Staging
-npx wrangler r2 object put protomap-staging/my-map.pmtiles --file ./path/to/your-map.pmtiles
+npx wrangler r2 object put protomap-staging/regions/brazil.pmtiles --file ./path/to/brazil.pmtiles
 # Production
-npx wrangler r2 object put protomap-production/my-map.pmtiles --file ./path/to/your-map.pmtiles
+npx wrangler r2 object put protomap-production/regions/brazil.pmtiles --file ./path/to/brazil.pmtiles
 ```
+
+**Font glyphs (.pbf):** Upload each glyph range to the `glyphs/` prefix in R2:
+```bash
+# Example: Inter Regular font, range 0-255
+npx wrangler r2 object put "protomap-development/glyphs/Inter Regular/0-255.pbf" --file ./fonts/inter-regular-0-255.pbf
+```
+
+> 💡 **Don't have font glyphs?** Build them from open-source fonts using [font-maker](https://maplibre.org/font-maker/) or download pre-built [OpenFreeMap fonts](https://github.com/hybridge-dev/open-free-map-fonts).
 
 **Your map is live.** The worker is automatically available at a `*.workers.dev` URL:
 
 ```
-https://protomap-worker-<environment>.<your-subdomain>.workers.dev/my-map/{z}/{x}/{y}.mvt
+https://protomap-worker-<environment>.<your-subdomain>.workers.dev/regions/brazil/{z}/{x}/{y}.mvt
 ```
 
 For a custom domain, see [Custom domain](#custom-domain) in the Deployment section.
@@ -255,7 +266,7 @@ You'll upload this file in the next step.
 Upload your `.pmtiles` file to the **staging bucket** — never upload directly to production:
 
 ```bash
-npx wrangler r2 object put protomap-staging/my-map.pmtiles --file ./map.pmtiles
+npx wrangler r2 object put protomap-staging/regions/your-map.pmtiles --file ./map.pmtiles
 ```
 
 For large files (1 GB+), use rclone or the AWS CLI instead — see [Large file uploads](#large-file-uploads) for details.
@@ -305,10 +316,10 @@ The worker is automatically available at a `*.workers.dev` URL — no dashboard 
 The worker is live at:
 
 ```
-https://protomap-worker-<environment>.<your-subdomain>.workers.dev/my-map/0/0/0.mvt
+https://protomap-worker-<environment>.<your-subdomain>.workers.dev/regions/your-map/0/0/0.mvt
 ```
 
-Replace `<your-subdomain>` with your Cloudflare subdomain and `my-map` with your map name (the filename without `.pmtiles`).
+Replace `<your-subdomain>` with your Cloudflare subdomain and `your-map` with your map name (the filename without `.pmtiles`).
 
 > **Can't find your subdomain?** In the Cloudflare Dashboard, go to **Workers & Pages**, click your worker — the URL is shown at the top of the page.
 
@@ -322,7 +333,7 @@ If you set up `AUTH_SECRET`, add the auth query parameters — see the [Authenti
 
 ### What is Protomap Worker?
 
-A **Cloudflare Worker** that serves map tiles from [PMTiles](https://protomaps.com/) archives stored in **Cloudflare R2**. It wraps the [`pmtiles`](https://github.com/protomaps/PMTiles) library in a secure, cacheable, production-grade HTTP interface.
+A **Cloudflare Worker** that serves map tiles and font glyphs from [PMTiles](https://protomaps.com/) archives stored in **Cloudflare R2**. It wraps the [`pmtiles`](https://github.com/protomaps/PMTiles) library in a secure, cacheable, production-grade HTTP interface, and also serves protobuf font files (`.pbf`) for map text rendering.
 
 ### Why not just use Mapbox?
 
@@ -359,8 +370,7 @@ Set in `wrangler.jsonc` (non-secret) or as Cloudflare secrets:
 |---|---|---|---|
 | `AUTH_SECRET` | — | ✅ | HMAC-SHA256 secret for signed URL authentication. When unset, auth is disabled. |
 | `ALLOWED_ORIGINS` | `*` | ❌ | Comma-separated list of allowed CORS origins. Set to specific domains in production. |
-| `CACHE_CONTROL` | `public, max-age=604800, stale-while-revalidate=86400` | ❌ | `Cache-Control` header value for tile responses. |
-| `PMTILES_PATH` | `{name}.pmtiles` | ❌ | Template for R2 key resolution. Supports `{name}` placeholder. Example: `folder/{name}/archive.pmtiles` |
+| `CACHE_CONTROL` | `public, max-age=604800, stale-while-revalidate=86400` | ❌ | `Cache-Control` header value for tile and TileJSON responses. Glyph responses use a hardcoded immutable cache. |
 | `PUBLIC_HOSTNAME` | — | ❌ | Public hostname used in TileJSON responses. Auto-detected from request when unset. |
 
 ### Local Development
@@ -389,7 +399,12 @@ Configured in `wrangler.jsonc` under each environment:
 | Staging | `protomap-staging` | `protomap-worker-staging` |
 | Production | `protomap-production` | `protomap-worker-production` |
 
-The worker expects a single R2 bucket binding named `BUCKET`.
+The worker expects a single R2 bucket binding named `BUCKET`. Objects in the bucket must follow this structure:
+
+| Prefix | Example R2 Key | Description |
+|---|---|---|
+| `regions/` | `regions/brazil.pmtiles` | PMTiles archives for map tile data |
+| `glyphs/` | `glyphs/Inter Regular/0-255.pbf` | Font glyph files for map text rendering |
 
 ---
 
@@ -398,12 +413,12 @@ The worker expects a single R2 bucket binding named `BUCKET`.
 ### Serve a tile
 
 ```
-GET /{name}/{z}/{x}/{y}.{ext}
+GET /regions/{name}/{z}/{x}/{y}.{ext}
 ```
 
 | Param | Description |
 |---|---|
-| `name` | Map identifier. Resolves to an R2 object key using `PMTILES_PATH` template (default: `{name}.pmtiles`). |
+| `name` | Map identifier. Resolves to R2 key `regions/{name}.pmtiles`. |
 | `z` | Zoom level. `0` (single world tile) through `20+`. |
 | `x` | Tile column. Range: `0` to `2^z - 1`, left to right. |
 | `y` | Tile row. Range: `0` to `2^z - 1`, top to bottom (TMS). |
@@ -421,12 +436,12 @@ GET /{name}/{z}/{x}/{y}.{ext}
 
 > ⚠️ Using a mismatched extension (e.g., `.png` on an MVT archive) returns `400 Bad Request`.
 >
-> 💡 **How to check your archive's type:** Run `pmtiles show file.pmtiles` and check the tile type in the header, or request `/{name}.json` to see the TileJSON response.
+> 💡 **How to check your archive's type:** Run `pmtiles show file.pmtiles` and check the tile type in the header, or request `/regions/{name}.json` to see the TileJSON response.
 
 **Example:**
 
 ```http
-GET /brazil/12/1516/2021.mvt
+GET /regions/brazil/12/1516/2021.mvt
 ```
 
 ```http
@@ -439,7 +454,7 @@ Access-Control-Allow-Origin: *
 ### Get TileJSON metadata
 
 ```
-GET /{name}.json
+GET /regions/{name}.json
 ```
 
 Returns a [TileJSON](https://github.com/mapbox/tilejson-spec) description of the tileset — useful for MapLibre, Mapbox GL, and other TileJSON-aware clients.
@@ -447,7 +462,7 @@ Returns a [TileJSON](https://github.com/mapbox/tilejson-spec) description of the
 **Example:**
 
 ```http
-GET /brazil.json
+GET /regions/brazil.json
 ```
 
 ```json
@@ -456,7 +471,7 @@ GET /brazil.json
   "name": "brazil",
   "scheme": "xyz",
   "tiles": [
-    "https://your-worker.example.com/brazil/{z}/{x}/{y}.mvt"
+    "https://your-worker.example.com/regions/brazil/{z}/{x}/{y}.mvt"
   ],
   "vector_layers": [...],
   "maxzoom": 14,
@@ -464,10 +479,40 @@ GET /brazil.json
 }
 ```
 
+### Serve a font glyph
+
+```
+GET /glyphs/{fontstack}/{range}.pbf
+```
+
+Serves a protobuf font glyph file (`.pbf`) for map text rendering. Used by MapLibre GL JS and Mapbox GL JS to render labels and text on vector tiles.
+
+| Param | Description |
+|---|---|
+| `fontstack` | Font name (e.g., `Inter Regular`). URL-encoded spaces are supported. |
+| `range` | Glyph range (e.g., `0-255`, `256-512`). Must be a `.pbf` file. |
+
+**Example:**
+
+```http
+GET /glyphs/Inter%20Regular/0-255.pbf
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/x-protobuf
+Cache-Control: public, max-age=31536000, immutable
+Access-Control-Allow-Origin: *
+```
+
+> 💡 **Font glyphs must be pre-uploaded to R2** under the `glyphs/` prefix (e.g., `glyphs/Inter Regular/0-255.pbf`). The worker does not generate fonts on the fly.
+>
+> 💡 **Don't have font glyphs?** Build them from open-source fonts using [font-maker](https://maplibre.org/font-maker/) or download pre-built [OpenFreeMap fonts](https://github.com/hybridge-dev/open-free-map-fonts).
+
 ### Cache behavior
 
 - **Local dev:** Caching is disabled
-- **Production:** Uses `caches.default` with `Cache-Control` from configuration
+- **Production:** Uses `caches.default` with configurable `Cache-Control` for tiles/TileJSON and hardcoded immutable cache for glyphs
 - **Cache key:** Based on URL with auth params stripped (so signed URLs still cache effectively)
 
 ---
@@ -487,7 +532,8 @@ No secrets ever reach the client.
 ### URL format
 
 ```
-GET /{name}/{z}/{x}/{y}.{ext}?v=1&sig={hex_signature}&exp={unix_timestamp}
+GET /regions/{name}/{z}/{x}/{y}.{ext}?v=1&sig={hex_signature}&exp={unix_timestamp}
+GET /glyphs/{fontstack}/{range}.pbf?v=1&sig={hex_signature}&exp={unix_timestamp}
 ```
 
 | Param | Description |
@@ -506,7 +552,7 @@ const exp = Math.floor(Date.now() / 1000) + 3600; // 1 hour
 const message = `v1:${exp}`;
 const sig = createHmac("sha256", secret).update(message).digest("hex");
 
-const url = `https://your-worker.example.com/my-map/{z}/{x}/{y}.mvt?v=1&sig=${sig}&exp=${exp}`;
+const url = `https://your-worker.example.com/regions/my-map/{z}/{x}/{y}.mvt?v=1&sig=${sig}&exp=${exp}`;
 ```
 
 > The message format is versioned for future extensibility:
@@ -538,14 +584,14 @@ SECRET="your-auth-secret"
 EXP=$(($(date +%s) + 3600))
 SIG=$(echo -n "v1:$EXP" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')
 
-curl "https://your-worker.example.com/my-map/12/1516/2021.mvt?v=1&sig=$SIG&exp=$EXP" -o tile.mvt
+curl "https://your-worker.example.com/regions/my-map/12/1516/2021.mvt?v=1&sig=$SIG&exp=$EXP" -o tile.mvt
 ```
 
 ---
 
 ## 🎨 Client Integration
 
-Protomap Worker works with any map library that supports HTTP tile sources. All examples use the tile URL pattern `https://your-worker.example.com/{mapName}/{z}/{x}/{y}.mvt`.
+Protomap Worker works with any map library that supports HTTP tile sources. All tile URL examples use the pattern `https://your-worker.example.com/regions/{mapName}/{z}/{x}/{y}.mvt`. For font glyphs, use `https://your-worker.example.com/glyphs/{fontstack}/{range}.pbf`.
 
 <details>
 <summary><b>Leaflet (JavaScript)</b></summary>
@@ -554,7 +600,7 @@ Protomap Worker works with any map library that supports HTTP tile sources. All 
 <script>
 const map = L.map('map').setView([-23.55, -46.63], 12);
 
-L.tileLayer('https://your-worker.example.com/{mapName}/{z}/{x}/{y}.mvt', {
+L.tileLayer('https://your-worker.example.com/regions/{mapName}/{z}/{x}/{y}.mvt', {
   mapName: 'your-map',
   tileSize: 512,
 }).addTo(map);
@@ -574,9 +620,10 @@ const map = new maplibregl.Map({
     sources: {
       tiles: {
         type: 'vector',
-        tiles: ['https://your-worker.example.com/your-map/{z}/{x}/{y}.mvt'],
+        tiles: ['https://your-worker.example.com/regions/your-map/{z}/{x}/{y}.mvt'],
       },
     },
+    glyphs: 'https://your-worker.example.com/glyphs/{fontstack}/{range}.pbf',
     layers: [
       {
         id: 'roads',
@@ -600,7 +647,7 @@ import XYZ from 'ol/source/XYZ.js';
 
 const layer = new TileLayer({
   source: new XYZ({
-    url: 'https://your-worker.example.com/your-map/{z}/{x}/{y}.mvt',
+    url: 'https://your-worker.example.com/regions/your-map/{z}/{x}/{y}.mvt',
   }),
 });
 ```
@@ -616,7 +663,7 @@ import 'package:latlong2/latlong.dart';
 
 TileLayer(
   tileProvider: CachedNetworkTileProvider(),
-  urlTemplate: 'https://your-worker.example.com/{mapName}/{z}/{x}/{y}.mvt',
+  urlTemplate: 'https://your-worker.example.com/regions/{mapName}/{z}/{x}/{y}.mvt',
   additionalOptions: {
     'mapName': 'your-map',
   },
@@ -640,7 +687,7 @@ import MapView, { UrlTile } from 'react-native-maps';
   }}
 >
   <UrlTile
-    urlTemplate="https://your-worker.example.com/your-map/{z}/{x}/{y}.mvt"
+    urlTemplate="https://your-worker.example.com/regions/your-map/{z}/{x}/{y}.mvt"
     tileSize={512}
   />
 </MapView>
@@ -655,7 +702,7 @@ import MapView, { UrlTile } from 'react-native-maps';
 import MapKit
 
 let tileOverlay = MKTileOverlay(
-  urlTemplate: "https://your-worker.example.com/your-map/{z}/{x}/{y}.mvt"
+  urlTemplate: "https://your-worker.example.com/regions/your-map/{z}/{x}/{y}.mvt"
 )
 tileOverlay.canReplaceMapContent = true
 mapView.addOverlay(tileOverlay, level: .aboveLabels)
@@ -668,7 +715,7 @@ mapView.addOverlay(tileOverlay, level: .aboveLabels)
 
 ```kotlin
 // Mapbox GL — use TileJSON
-val styleUrl = "https://your-worker.example.com/your-map.json"
+val styleUrl = "https://your-worker.example.com/regions/your-map.json"
 mapboxMap.loadStyleUri(styleUrl)
 
 // osmdroid
@@ -682,7 +729,7 @@ val tileSource = object : OnlineTileSourceBase(
     val z = MapTileIndex.getZoom(tile)
     val x = MapTileIndex.getX(tile)
     val y = MapTileIndex.getY(tile)
-    return "https://your-worker.example.com/your-map/$z/$x/$y.mvt"
+    return "https://your-worker.example.com/regions/your-map/$z/$x/$y.mvt"
   }
 }
 mapView.setTileSource(tileSource)
@@ -695,10 +742,13 @@ mapView.setTileSource(tileSource)
 
 ```bash
 # Fetch a tile
-curl https://your-worker.example.com/your-map/12/1516/2021.mvt -o tile.mvt
+curl https://your-worker.example.com/regions/your-map/12/1516/2021.mvt -o tile.mvt
 
 # Fetch TileJSON metadata
-curl https://your-worker.example.com/your-map.json
+curl https://your-worker.example.com/regions/your-map.json
+
+# Fetch a font glyph
+curl "https://your-worker.example.com/glyphs/Inter%20Regular/0-255.pbf" -o font.pbf
 ```
 
 </details>
@@ -734,7 +784,7 @@ npx wrangler secret put AUTH_SECRET --env production
 npx wrangler r2 bucket create protomap-production
 
 # 4. Upload your map
-npx wrangler r2 object put protomap-production/my-map.pmtiles --file ./map.pmtiles
+npx wrangler r2 object put protomap-production/regions/your-map.pmtiles --file ./map.pmtiles
 
 # 5. Deploy
 pnpm deploy --env production
@@ -766,10 +816,10 @@ Then upload a file with progress:
 
 ```bash
 # Upload to staging
-rclone copy ./my-map.pmtiles r2:protomap-staging/ --progress
+rclone copy ./your-map.pmtiles r2:protomap-staging/regions/ --progress
 
 # Upload to production (not recommended — use the bucket sync instead)
-rclone copy ./my-map.pmtiles r2:protomap-production/ --progress
+rclone copy ./your-map.pmtiles r2:protomap-production/regions/ --progress
 ```
 
 To get your R2 credentials: Cloudflare Dashboard → **R2** → **Overview** → **Manage R2 API Tokens** → **Create API token**.
@@ -784,7 +834,7 @@ To find your `ACCOUNT_ID`: Cloudflare Dashboard → **Workers & Pages** → look
 aws configure set aws_access_key_id "<R2_ACCESS_KEY_ID>"
 aws configure set aws_secret_access_key "<R2_SECRET_ACCESS_KEY>"
 
-aws s3 cp ./my-map.pmtiles s3://protomap-staging/ \
+aws s3 cp ./your-map.pmtiles s3://protomap-staging/regions/ \
   --endpoint-url "https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
 ```
 
@@ -1046,7 +1096,7 @@ pnpm start -- --remote       # Or: npx wrangler dev --remote
 Connects to your `protomap-development` R2 bucket on Cloudflare's edge. Upload data first:
 
 ```bash
-npx wrangler r2 object put protomap-development/my-map.pmtiles --file ./map.pmtiles
+npx wrangler r2 object put protomap-development/regions/your-map.pmtiles --file ./map.pmtiles
 ```
 
 The worker serves at **http://localhost:8787**.
@@ -1076,14 +1126,22 @@ The worker serves at **http://localhost:8787**.
 
 ```
 Request  →  index.ts (fetch handler)
-               ├── Validate method          ← 405 if not GET
-               ├── Parse URL path            ← 404 if invalid route
-               ├── Authenticate              ← 401/403 if AUTH_SECRET set
-               ├── Check edge cache          ← caches.default
-               ├── Read from R2              ← R2Source → PMTiles archive
-               ├── Serve tile or TileJSON    ← servePmtilesRequest()
-               ├── Store in cache            ← ctx.waitUntil()
-               └── Return response           ← with CORS + security headers
+                ├── Validate method          ← 405 if not GET
+                ├── Parse route               ← router: /regions/* or /glyphs/*
+                ├── Authenticate              ← 401/403 if AUTH_SECRET set
+                ├── Check edge cache          ← caches.default
+                │
+                ├── Regions route:
+                │   ├── Read from R2          ← R2Source → PMTiles archive
+                │   ├── Serve tile or TileJSON← servePmtilesRequest()
+                │   └── Store in cache         ← ctx.waitUntil()
+                │
+                └── Glyphs route:
+                    ├── Validate glyph path   ← .pbf, no traversal
+                    ├── Read from R2           ← bucket.get()
+                    └── Serve or 404           ← immutable cache
+
+                Return response ← with CORS + security headers
 ```
 
 The worker is intentionally minimal — a single `fetch` handler that delegates to focused modules:
@@ -1091,10 +1149,12 @@ The worker is intentionally minimal — a single `fetch` handler that delegates 
 | Module | Responsibility |
 |---|---|
 | `src/index.ts` | Request routing, orchestration, caching |
+| `src/router/router.ts` | URL parsing — routes `/regions/*` and `/glyphs/*` to handlers |
 | `src/auth/` | HMAC-SHA256 signed URL verification (pluggable version handlers) |
 | `src/pmtiles/` | PMTiles parsing, tile serving, content-type mapping |
+| `src/glyphs/` | Font glyph serving from R2 |
 | `src/storage/` | R2 bucket access implementing pmtiles `Source` interface |
-| `src/shared/` | URL parsing, hex encoding, map tile coordinate utilities |
+| `src/shared/` | URL parsing, map tile coordinate utilities |
 | `src/error/` | Structured error classes with typed codes and HTTP status mapping |
 
 ---
@@ -1103,8 +1163,8 @@ The worker is intentionally minimal — a single `fetch` handler that delegates 
 
 - **CORS** — Controlled by `ALLOWED_ORIGINS` env var. Use specific origins in production, never `*` for sensitive data.
 - **Method restriction** — Only `GET` is accepted. All other methods return `405 Method Not Allowed`.
-- **Input validation** — Paths, tile coordinates, and query parameters are validated before any R2 access.
-- **Path traversal protection** — Map names and keys are validated against traversal patterns.
+- **Input validation** — Paths, tile coordinates, glyph paths, and query parameters are validated before any R2 access.
+- **Path traversal protection** — Map names, glyph paths, and keys are validated against traversal patterns (`..`, null bytes, invalid extensions).
 - **No secret leakage** — Secrets are Cloudflare-bound via `wrangler secret put`, never in source.
 - **No stack traces** — Production errors return structured JSON without internal details.
 - **Constant-time comparison** — HMAC verification uses `timingSafeEqual` to prevent timing attacks.
@@ -1114,9 +1174,10 @@ The worker is intentionally minimal — a single `fetch` handler that delegates 
 
 ## ⚠️ Limitations
 
-- **CORS preflight** — `OPTIONS` requests are not handled. Tile requests are simple `GET` requests that do not trigger preflight in browsers.
-- **Auth disabled by default** — Signed URL authentication must be explicitly enabled by setting `AUTH_SECRET`.
+- **CORS preflight** — `OPTIONS` requests are not handled. Tile and glyph requests are simple `GET` requests that do not trigger preflight in browsers.
+- **Auth disabled by default** — Signed URL authentication must be explicitly enabled by setting `AUTH_SECRET`. Applies to both `/regions` and `/glyphs` endpoints.
 - **Cache in dev** — Edge caching is disabled during local development. Production automatically uses `caches.default`.
+- **Glyph caching** — Font glyph responses use a hardcoded immutable cache policy (`public, max-age=31536000, immutable`), not configurable via `CACHE_CONTROL`.
 - **Compression** — Gzip-deflated tiles are supported. Brotli and Zstd are not currently supported (return `501 Not Implemented`).
 - **No analytics** — This worker does not collect usage data. Monitor via Cloudflare dashboard and R2 logs.
 

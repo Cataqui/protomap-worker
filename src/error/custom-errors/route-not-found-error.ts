@@ -6,7 +6,7 @@ export class RouteNotFoundError extends WorkerError {
     super({
       code: WorkerErrorCodes.ROUTE_NOT_FOUND,
       status: 404,
-      message: `No route matches the requested path '${path}'. Expected patterns: '/{name}/{z}/{x}/{y}.{ext}' for tiles or '/{name}.json' for TileJSON metadata.`,
+      message: `No route matches the requested path '${path}'. Expected patterns: '/regions/{name}/{z}/{x}/{y}.{ext}' for tiles, '/regions/{name}.json' for TileJSON metadata, or '/glyphs/{path}' for font glyphs.`,
     });
   }
 }

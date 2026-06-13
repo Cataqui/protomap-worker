@@ -13,7 +13,7 @@ const BASIC_ENV = {
 
 describe("Worker fetch handler", () => {
   it("responds with 405 for POST requests", async () => {
-    const request = new Request("http://example.com/test.pmtiles", { method: "POST" });
+    const request = new Request("http://example.com/regions/test", { method: "POST" });
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, BASIC_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -34,8 +34,18 @@ describe("Worker fetch handler", () => {
     expect(body.code).toBe(WorkerErrorCodes.ROUTE_NOT_FOUND);
   });
 
-  it("responds with 404 for missing archives", async () => {
-    const request = new Request("http://example.com/nonexistent/0/0/0.png");
+  it("responds with 404 for old-style paths without prefix", async () => {
+    const request = new Request("http://example.com/mymap/1/2/3.mvt");
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, BASIC_ENV, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.ROUTE_NOT_FOUND);
+  });
+
+  it("responds with 404 for missing archives in regions", async () => {
+    const request = new Request("http://example.com/regions/nonexistent/0/0/0.png");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, BASIC_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -46,7 +56,7 @@ describe("Worker fetch handler", () => {
   });
 
   it("handles tile path with valid format but missing archive", async () => {
-    const request = new Request("http://example.com/mymap/1/2/3.mvt");
+    const request = new Request("http://example.com/regions/mymap/1/2/3.mvt");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, BASIC_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -55,7 +65,7 @@ describe("Worker fetch handler", () => {
   });
 
   it("handles tileset JSON path with missing archive", async () => {
-    const request = new Request("http://example.com/mymap.json");
+    const request = new Request("http://example.com/regions/mymap.json");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, BASIC_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -64,11 +74,41 @@ describe("Worker fetch handler", () => {
   });
 
   it("sets CORS headers for allowed origins", async () => {
-    const request = new Request("http://example.com/mymap.json");
+    const request = new Request("http://example.com/regions/mymap.json");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, BASIC_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.headers.get("Vary")).toBe("Origin");
+  });
+
+  it("responds with 404 for path traversal (URL-normalized)", async () => {
+    const request = new Request("http://example.com/glyphs/../../../etc/passwd.pbf");
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, BASIC_ENV, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.ROUTE_NOT_FOUND);
+  });
+
+  it("responds with 400 for glyph paths not ending in .pbf", async () => {
+    const request = new Request("http://example.com/glyphs/font.txt");
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, BASIC_ENV, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.GLYPH_PATH_INVALID);
+  });
+
+  it("responds with 404 for missing glyphs", async () => {
+    const request = new Request("http://example.com/glyphs/Missing Font/0.pbf");
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, BASIC_ENV, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.GLYPH_NOT_FOUND);
   });
 });
 
@@ -78,12 +118,11 @@ function toHex(bytes: Uint8Array): string {
     .join("");
 }
 
-async function createAuthUrl(expOffset: number): Promise<string> {
-  const secret = "test-secret-key";
+async function createAuthUrl(path: string, expOffset: number, secret = "test-secret-key"): Promise<string> {
   const exp = Math.floor(Date.now() / 1000) + expOffset;
   const message = `v1:${exp}`;
   const sig = await AuthUtils.computeHmac(secret, message);
-  return `http://example.com/mymap/0/0/0.png?v=1&sig=${toHex(sig)}&exp=${exp}`;
+  return `http://example.com${path}?v=1&sig=${toHex(sig)}&exp=${exp}`;
 }
 
 const AUTH_ENV = {
@@ -95,7 +134,7 @@ const AUTH_ENV = {
 
 describe("Worker authentication", () => {
   it("rejects request without v param — AUTH_VERSION_MISSING", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?sig=abc&exp=123");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?sig=abc&exp=123");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -106,7 +145,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request without sig param — AUTH_PARAM_MISSING", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?v=1&exp=123");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?v=1&exp=123");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -117,7 +156,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request without exp param — AUTH_PARAM_MISSING", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=abc");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?v=1&sig=abc");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -127,7 +166,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request without any auth params — AUTH_VERSION_MISSING", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -137,7 +176,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request with unknown version v=2 — AUTH_VERSION_UNKNOWN", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?v=2&sig=abc&exp=9999999999");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?v=2&sig=abc&exp=9999999999");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -148,7 +187,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request with unknown version v=99 — AUTH_VERSION_UNKNOWN", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?v=99&sig=abc&exp=9999999999");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?v=99&sig=abc&exp=9999999999");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -159,7 +198,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request with non-hex sig — AUTH_SIG_INVALID_HEX", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=nothex&exp=9999999999");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?v=1&sig=nothex&exp=9999999999");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -169,7 +208,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request with non-numeric exp — AUTH_EXP_INVALID", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=abc&exp=notanumber");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?v=1&sig=abc&exp=notanumber");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -180,7 +219,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request with negative exp — AUTH_EXP_INVALID", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=abc&exp=-1");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?v=1&sig=abc&exp=-1");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -190,7 +229,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request with floating-point exp — AUTH_EXP_INVALID", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=abc&exp=123.456");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?v=1&sig=abc&exp=123.456");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -200,7 +239,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects expired request — AUTH_EXPIRED", async () => {
-    const url = await createAuthUrl(-3600);
+    const url = await createAuthUrl("/regions/mymap/0/0/0.png", -3600);
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
@@ -212,7 +251,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects expired request with exp 1 second in past — AUTH_EXPIRED", async () => {
-    const url = await createAuthUrl(-1);
+    const url = await createAuthUrl("/regions/mymap/0/0/0.png", -1);
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
@@ -223,7 +262,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request with invalid signature — AUTH_SIG_INVALID_HEX", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=invalidsignature&exp=9999999999");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?v=1&sig=invalidsignature&exp=9999999999");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -233,7 +272,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects request with wrong secret — AUTH_SIG_MISMATCH", async () => {
-    const url = await createAuthUrl(3600);
+    const url = await createAuthUrl("/regions/mymap/0/0/0.png", 3600);
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, { ...AUTH_ENV, AUTH_SECRET: "wrong-secret" }, ctx);
@@ -247,7 +286,7 @@ describe("Worker authentication", () => {
     const exp = Math.floor(Date.now() / 1000) + 3600;
     const message = `v1:${exp}`;
     const sig = await AuthUtils.computeHmac("test-secret-key", message);
-    const url = new URL(`http://example.com/mymap/0/0/0.png?v=1&sig=${toHex(sig)}&exp=${exp + 1}`);
+    const url = new URL(`http://example.com/regions/mymap/0/0/0.png?v=1&sig=${toHex(sig)}&exp=${exp + 1}`);
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
@@ -258,7 +297,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects odd-length hex sig — AUTH_SIG_INVALID_HEX", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png?v=1&sig=abc&exp=9999999999");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png?v=1&sig=abc&exp=9999999999");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -268,7 +307,7 @@ describe("Worker authentication", () => {
   });
 
   it("rejects sig with invalid hex characters — AUTH_SIG_INVALID_HEX", async () => {
-    const url = new URL("http://example.com/mymap/0/0/0.png?v=1&sig=zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz&exp=9999999999");
+    const url = new URL("http://example.com/regions/mymap/0/0/0.png?v=1&sig=zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz&exp=9999999999");
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
@@ -278,8 +317,8 @@ describe("Worker authentication", () => {
     expect(body.code).toBe(WorkerErrorCodes.AUTH_SIG_INVALID_HEX);
   });
 
-  it("passes request with valid signature", async () => {
-    const url = await createAuthUrl(3600);
+  it("passes request with valid signature for regions endpoint", async () => {
+    const url = await createAuthUrl("/regions/mymap/0/0/0.png", 3600);
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
@@ -288,7 +327,7 @@ describe("Worker authentication", () => {
   });
 
   it("passes request with valid signature and far future expiration", async () => {
-    const url = await createAuthUrl(86400 * 30);
+    const url = await createAuthUrl("/regions/mymap/0/0/0.png", 86400 * 30);
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
@@ -297,11 +336,8 @@ describe("Worker authentication", () => {
   });
 
   it("passes request with extra unknown query params", async () => {
-    const exp = Math.floor(Date.now() / 1000) + 3600;
-    const message = `v1:${exp}`;
-    const sig = await AuthUtils.computeHmac("test-secret-key", message);
-    const url = `http://example.com/mymap/0/0/0.png?v=1&sig=${toHex(sig)}&exp=${exp}&foo=bar`;
-    const request = new Request(url);
+    const url = await createAuthUrl("/regions/mymap/0/0/0.png", 3600);
+    const request = new Request(url + "&foo=bar");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
@@ -309,7 +345,7 @@ describe("Worker authentication", () => {
   });
 
   it("passes request with exp at exact current second", async () => {
-    const url = await createAuthUrl(0);
+    const url = await createAuthUrl("/regions/mymap/0/0/0.png", 0);
     const request = new Request(url);
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
@@ -318,10 +354,29 @@ describe("Worker authentication", () => {
   });
 
   it("returns Content-Type application/json for auth errors", async () => {
-    const request = new Request("http://example.com/mymap/0/0/0.png");
+    const request = new Request("http://example.com/regions/mymap/0/0/0.png");
     const ctx = createExecutionContext();
     const response = await worker.fetch(request, AUTH_ENV, ctx);
     await waitOnExecutionContext(ctx);
     expect(response.headers.get("Content-Type")).toBe("application/json");
+  });
+
+  it("requires auth for glyphs endpoint", async () => {
+    const request = new Request("http://example.com/glyphs/Inter Regular/203.pbf");
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, AUTH_ENV, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as any;
+    expect(body.code).toBe(WorkerErrorCodes.AUTH_VERSION_MISSING);
+  });
+
+  it("passes valid auth for glyphs endpoint", async () => {
+    const url = await createAuthUrl("/glyphs/Inter Regular/203.pbf", 3600);
+    const request = new Request(url);
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, AUTH_ENV, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(404);
   });
 });

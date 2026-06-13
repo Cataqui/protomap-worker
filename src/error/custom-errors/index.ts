@@ -7,6 +7,8 @@ export { AuthSigMismatchError } from "./auth-sig-mismatch-error";
 export { AuthVersionMissingError } from "./auth-version-missing-error";
 export { AuthVersionUnknownError } from "./auth-version-unknown-error";
 export { CompressionNotSupportedError } from "./compression-not-supported-error";
+export { GlyphNotFoundError } from "./glyph-not-found-error";
+export { GlyphPathInvalidError } from "./glyph-path-invalid-error";
 export { MethodNotAllowedError } from "./method-not-allowed-error";
 export { RouteNotFoundError } from "./route-not-found-error";
 export { TileTypeMismatchError } from "./tile-type-mismatch-error";

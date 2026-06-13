@@ -13,6 +13,8 @@ export const WorkerErrorCodes = {
   TILE_ZOOM_OUT_OF_RANGE: "TILE_ZOOM_OUT_OF_RANGE",
   ARCHIVE_NOT_FOUND: "ARCHIVE_NOT_FOUND",
   COMPRESSION_NOT_SUPPORTED: "COMPRESSION_NOT_SUPPORTED",
+  GLYPH_NOT_FOUND: "GLYPH_NOT_FOUND",
+  GLYPH_PATH_INVALID: "GLYPH_PATH_INVALID",
 } as const;
 
 export type WorkerErrorCode = (typeof WorkerErrorCodes)[keyof typeof WorkerErrorCodes];

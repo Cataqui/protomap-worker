@@ -1,28 +1,26 @@
 import { EtagMismatch, type RangeResponse, type Source } from "pmtiles";
 import { ArchiveNotFoundError } from "../error";
-import { MapTileUtils } from "../shared/map-tile.utils";
-import type { Env } from "../types/env.type";
 
 export class R2Source implements Source {
-  env: Env;
-  archiveName: string;
+  bucket: R2Bucket;
+  r2Key: string;
 
-  constructor(env: Env, archiveName: string) {
-    this.env = env;
-    this.archiveName = archiveName;
+  constructor(bucket: R2Bucket, r2Key: string) {
+    this.bucket = bucket;
+    this.r2Key = r2Key;
   }
 
   getKey() {
-    return this.archiveName;
+    return this.r2Key;
   }
 
   async getBytes(offset: number, length: number, _signal?: AbortSignal, etag?: string): Promise<RangeResponse> {
-    const resp = await this.env.BUCKET.get(MapTileUtils.pmtilesPath(this.archiveName, this.env.PMTILES_PATH), {
+    const resp = await this.bucket.get(this.r2Key, {
       range: { offset: offset, length: length },
       onlyIf: { etagMatches: etag },
     });
 
-    if (!resp) throw new ArchiveNotFoundError(this.archiveName);
+    if (!resp) throw new ArchiveNotFoundError(this.r2Key);
 
     const o = resp as R2ObjectBody;
 
